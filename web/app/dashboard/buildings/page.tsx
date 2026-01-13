@@ -121,12 +121,20 @@ export default function BuildingsPage() {
       headers: { ...headers, 'content-type': 'application/json' },
       body: JSON.stringify({ complexId: selectedComplexId, name }),
     })
-    const json = (await res.json()) as { error?: string }
+    const json = (await res.json()) as { error?: string; emailSent?: boolean }
     if (!res.ok) {
       setMessage(json.error ?? '동 생성에 실패했습니다.')
       setLoading(false)
       return
     }
+
+    setMessage(
+      json.emailSent
+        ? '동 관리자 임명 및 초대 메일 발송 완료'
+        : '동 관리자 임명 완료 (기존 계정이면 초대 메일은 발송되지 않을 수 있습니다)'
+    )
+    setLoading(false)
+    return
 
     setBuildingName('')
     setMessage('동을 생성했습니다.')
@@ -558,4 +566,3 @@ export default function BuildingsPage() {
     </section>
   )
 }
-

@@ -50,11 +50,11 @@ export async function POST(request: Request) {
   const admin = getSupabaseAdminClient()
 
   const origin = request.headers.get('origin') ?? ''
-  const redirectTo = origin ? `${origin}/auth/callback?next=/dashboard` : undefined
+  const redirectTo = origin ? `${origin}/auth/callback?next=/onboarding` : undefined
 
   const invite = await admin.auth.admin.inviteUserByEmail(email, {
     redirectTo,
-    data: { role: roleId },
+    data: { role: roleId, lockScope: false },
   })
 
   let userId = invite.data.user?.id ?? null
@@ -93,4 +93,3 @@ export async function POST(request: Request) {
 
   return json(200, { ok: true, userId })
 }
-

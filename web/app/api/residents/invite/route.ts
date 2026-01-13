@@ -91,6 +91,7 @@ export async function POST(request: Request) {
 
   const inviteForm = {
     role: 'RESIDENT',
+    lockScope: true,
     complexId,
     complexName: (body.complexName ?? '').trim(),
     buildingId,

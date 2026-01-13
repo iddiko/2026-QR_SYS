@@ -129,12 +129,20 @@ export default function ComplexesPage() {
       headers: { ...headers, 'content-type': 'application/json' },
       body: JSON.stringify({ name, region }),
     })
-    const json = (await res.json()) as { error?: string }
+    const json = (await res.json()) as { error?: string; emailSent?: boolean }
     if (!res.ok) {
       setActionMessage(json.error ?? '단지 생성에 실패했습니다.')
       setActionLoading(false)
       return
     }
+
+    setActionMessage(
+      json.emailSent
+        ? '관리자 임명 및 초대 메일 발송 완료'
+        : '관리자 임명 완료 (기존 계정이면 초대 메일은 발송되지 않을 수 있습니다)'
+    )
+    setActionLoading(false)
+    return
 
     setCreateName('')
     setCreateRegion('')
@@ -546,4 +554,3 @@ export default function ComplexesPage() {
     </section>
   )
 }
-

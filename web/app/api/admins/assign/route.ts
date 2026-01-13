@@ -14,6 +14,7 @@ type AssignBody = {
   roleId?: AdminRole
   complexId?: string
   buildingId?: string
+  sendEmail?: boolean
 }
 
 async function findAuthUserIdByEmail(admin: SupabaseClient, email: string) {
@@ -33,26 +34,39 @@ async function findAuthUserIdByEmail(admin: SupabaseClient, email: string) {
   return null
 }
 
+function isAdminRole(value: unknown): value is AdminRole {
+  return value === 'MAIN' || value === 'SUB' || value === 'GUARD'
+}
+
+function isMaybeAlreadyRegistered(message: string) {
+  const m = message.toLowerCase()
+  return m.includes('already') || m.includes('exists') || m.includes('registered')
+}
+
 export async function POST(request: Request) {
   const gate = await requireAdminRole(request, getSupabaseAnonClient)
   if (!gate.ok) return json(401, { error: gate.error })
-  if (gate.role !== 'SUPER') return json(403, { error: '최고 관리자만 관리자 임명이 가능합니다.' })
+  if (gate.role !== 'SUPER') return json(403, { error: '최고관리자만 관리자 임명이 가능합니다.' })
 
-  const body = (await request.json()) as AssignBody
+  const body = (await request.json().catch(() => ({}))) as AssignBody
   const email = (body.email ?? '').trim().toLowerCase()
-  const roleId = (body.roleId ?? '').trim() as AdminRole
+  const roleId = (body.roleId ?? '').trim()
   const complexIdInput = (body.complexId ?? '').trim()
   const buildingIdInput = (body.buildingId ?? '').trim()
+  const sendEmail = body.sendEmail !== false
 
-  if (!email) return json(400, { error: '이메일을 입력하세요.' })
-  if (roleId !== 'MAIN' && roleId !== 'SUB' && roleId !== 'GUARD') return json(400, { error: '레벨(roleId)이 올바르지 않습니다.' })
+  if (!email) return json(400, { error: '임명할 관리자 이메일을 입력하세요.' })
+  if (!isAdminRole(roleId)) return json(400, { error: 'roleId는 MAIN / SUB / GUARD 중 하나여야 합니다.' })
 
   const admin = getSupabaseAdminClient()
+  const anon = getSupabaseAnonClient()
+
   const origin = request.headers.get('origin') ?? ''
   const redirectTo = origin ? `${origin}/auth/callback?next=/onboarding` : undefined
 
   let userId = await findAuthUserIdByEmail(admin, email)
   let emailSent = false
+  let emailType: 'invite' | 'recovery' | null = null
 
   let complexId: string | null = complexIdInput || null
   let buildingId: string | null = buildingIdInput || null
@@ -60,26 +74,25 @@ export async function POST(request: Request) {
   let buildingName = ''
 
   if (roleId === 'MAIN') {
-    if (!complexId) return json(400, { error: '단지(메인) 임명에는 단지 선택이 필요합니다.' })
+    if (!complexId) return json(400, { error: '메인 관리자는 단지를 반드시 선택해야 합니다.' })
     buildingId = null
-  } else if (roleId === 'SUB' || roleId === 'GUARD') {
-    if (!buildingId) return json(400, { error: '동(서브)/경비 임명에는 동 선택이 필요합니다.' })
+  } else {
+    if (!buildingId) return json(400, { error: '서브 관리자/경비는 동(건물)을 반드시 선택해야 합니다.' })
+
     const { data: building, error: buildingError } = await admin
       .from('buildings')
       .select('id, name, complex_id, complexes(name)')
       .eq('id', buildingId)
       .maybeSingle()
     if (buildingError) return json(500, { error: buildingError.message })
-    if (!building) return json(400, { error: '선택한 동을 찾을 수 없습니다.' })
+    if (!building) return json(400, { error: '선택한 동(건물)을 찾을 수 없습니다.' })
 
     const derivedComplexId = building.complex_id as string
-    if (complexId && complexId !== derivedComplexId) return json(400, { error: '동이 속한 단지와 선택한 단지가 다릅니다.' })
+    if (complexId && complexId !== derivedComplexId) return json(400, { error: '동(건물)의 단지 정보가 일치하지 않습니다.' })
     complexId = derivedComplexId
 
     buildingName = String((building as any).name ?? '')
     complexName = String((building as any).complexes?.name ?? '')
-  } else {
-    // should never happen due to validation above
   }
 
   if (roleId === 'MAIN' && complexId) {
@@ -88,8 +101,10 @@ export async function POST(request: Request) {
     complexName = String((complexRow as any)?.name ?? '')
   }
 
-  // 임명 시점에 초대 메일 발송 (신규 계정인 경우)
-  if (!userId) {
+  // 1) 이메일 발송
+  // - 신규 사용자: Supabase 초대 메일(invite)
+  // - 기존 사용자: 초대 메일이 실패(이미 가입됨)할 수 있으므로, 비밀번호 설정(recovery) 메일을 보내 onboarding으로 유도
+  if (sendEmail) {
     const invite = await admin.auth.admin.inviteUserByEmail(email, {
       redirectTo,
       data: {
@@ -102,16 +117,27 @@ export async function POST(request: Request) {
       },
     })
 
-    if (invite.error || !invite.data.user?.id) {
-      return json(500, { error: invite.error?.message ?? '초대 메일 발송에 실패했습니다.' })
+    if (!invite.error && invite.data.user?.id) {
+      userId = invite.data.user.id
+      emailSent = true
+      emailType = 'invite'
+    } else if (invite.error && isMaybeAlreadyRegistered(invite.error.message)) {
+      if (!userId) userId = await findAuthUserIdByEmail(admin, email)
+      if (userId) {
+        const recovery = await anon.auth.resetPasswordForEmail(email, { redirectTo })
+        if (!recovery.error) {
+          emailSent = true
+          emailType = 'recovery'
+        }
+      }
+    } else if (invite.error) {
+      return json(500, { error: invite.error.message })
     }
-    userId = invite.data.user.id
-    emailSent = true
-  } else {
-    // 기존 계정은 Supabase 기본 초대 메일을 재발송할 수 없으므로, 임명만 처리합니다.
-    emailSent = false
   }
 
+  if (!userId) return json(500, { error: '사용자 계정을 확인할 수 없습니다.' })
+
+  // 2) 역할/소속 고정 메타데이터 및 public.users 프로필 upsert
   await admin.auth.admin.updateUserById(userId, {
     user_metadata: {
       role: roleId,
@@ -138,5 +164,6 @@ export async function POST(request: Request) {
 
   if (upsertError) return json(500, { error: upsertError.message })
 
-  return json(200, { ok: true, userId, roleId, complexId, buildingId, emailSent })
+  return json(200, { ok: true, userId, roleId, complexId, buildingId, emailSent, emailType })
 }
+

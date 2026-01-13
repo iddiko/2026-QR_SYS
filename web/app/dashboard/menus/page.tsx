@@ -5,6 +5,7 @@ import EditablePageNote from '../../../components/admin/EditablePageNote'
 import PageEditButton from '../../../components/admin/PageEditButton'
 import useAppSession from '../../../lib/authSession'
 import { MenuItem, useAdminCustomization } from '../../../lib/adminCustomization'
+import { getClientAuthHeaders } from '../../../lib/clientAuth'
 
 type RoleKey = 'SUPER' | 'MAIN' | 'SUB' | 'GUARD' | 'RESIDENT'
 type TargetRole = Exclude<RoleKey, 'SUPER'>
@@ -48,6 +49,29 @@ function visibleColumns(currentRole: RoleKey): TargetRole[] {
   return []
 }
 
+async function fetchRoleConfig(targetRole: TargetRole) {
+  const headers = await getClientAuthHeaders()
+  if (!headers.Authorization && !headers['x-demo-role']) throw new Error('로그인이 필요합니다.')
+
+  const res = await fetch(`/api/menu-config?targetRole=${encodeURIComponent(targetRole)}`, { headers })
+  const json = (await res.json().catch(() => ({}))) as { error?: string; config?: Record<string, boolean> }
+  if (!res.ok) throw new Error(json.error ?? '메뉴 설정을 불러오지 못했습니다.')
+  return json.config ?? {}
+}
+
+async function saveRoleConfig(targetRole: TargetRole, menuKey: string, enabled: boolean) {
+  const headers = await getClientAuthHeaders()
+  if (!headers.Authorization && !headers['x-demo-role']) throw new Error('로그인이 필요합니다.')
+
+  const res = await fetch('/api/menu-config', {
+    method: 'PUT',
+    headers: { ...headers, 'content-type': 'application/json' },
+    body: JSON.stringify({ targetRole, menuKey, enabled }),
+  })
+  const json = (await res.json().catch(() => ({}))) as { error?: string }
+  if (!res.ok) throw new Error(json.error ?? '저장에 실패했습니다.')
+}
+
 export default function RoleMenusPage() {
   const { session } = useAppSession()
   const currentRole = (session?.role as RoleKey | undefined) ?? 'SUPER'
@@ -58,6 +82,8 @@ export default function RoleMenusPage() {
   const rows = React.useMemo(() => flattenMenus(state.menus ?? []), [state.menus])
 
   const [toggles, setToggles] = React.useState<ToggleState>(() => ({}))
+  const [loadingConfig, setLoadingConfig] = React.useState(false)
+  const [saveError, setSaveError] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     setToggles((prev) => {
@@ -72,7 +98,42 @@ export default function RoleMenusPage() {
     })
   }, [rows])
 
-  const setToggle = (menuKey: string, target: TargetRole, next: boolean) => {
+  const loadConfigs = React.useCallback(async () => {
+    if (columns.length === 0) return
+    setLoadingConfig(true)
+    setSaveError(null)
+    try {
+      const results = await Promise.all(
+        columns.map(async (targetRole) => ({ targetRole, config: await fetchRoleConfig(targetRole) }))
+      )
+
+      setToggles((prev) => {
+        const next: ToggleState = { ...prev }
+        for (const row of rows) {
+          if (!next[row.key]) next[row.key] = { MAIN: true, SUB: true, GUARD: true, RESIDENT: true }
+        }
+
+        for (const r of results) {
+          for (const menuKey of Object.keys(next)) {
+            const v = r.config[menuKey]
+            if (typeof v === 'boolean') next[menuKey][r.targetRole] = v
+          }
+        }
+        return next
+      })
+    } catch (e: any) {
+      setSaveError(e?.message ?? '메뉴 설정을 불러오지 못했습니다.')
+    } finally {
+      setLoadingConfig(false)
+    }
+  }, [columns, rows])
+
+  React.useEffect(() => {
+    void loadConfigs()
+  }, [loadConfigs])
+
+  const setToggle = async (menuKey: string, target: TargetRole, next: boolean) => {
+    setSaveError(null)
     setToggles((prev) => ({
       ...prev,
       [menuKey]: {
@@ -80,6 +141,12 @@ export default function RoleMenusPage() {
         [target]: next,
       },
     }))
+
+    try {
+      await saveRoleConfig(target, menuKey, next)
+    } catch (e: any) {
+      setSaveError(e?.message ?? '저장에 실패했습니다.')
+    }
   }
 
   return (
@@ -89,8 +156,8 @@ export default function RoleMenusPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-blue-600 dark:text-sky-300">권한</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">권한별 메뉴 관리</h2>
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-            가로: 메인 관리자 / 서브 관리자 / 경비 / 입주민 · 세로: 모든 메뉴(대분류/하위메뉴 포함). 각 셀에서 ON/OFF로
-            표시 여부를 관리합니다.
+            가로: 메인 관리자 / 서브 관리자 / 경비 / 입주민 · 세로: 모든 메뉴(대분류/하위메뉴 포함). 각 셀에서 ON/OFF로 표시 여부를
+            관리합니다.
           </p>
         </div>
         <PageEditButton routeKey={routeKey} />
@@ -101,12 +168,23 @@ export default function RoleMenusPage() {
       <div className="rounded-2xl border border-slate-200/80 bg-white/60 p-4 text-sm text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
         <p className="font-semibold text-slate-900 dark:text-white">규칙</p>
         <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600 dark:text-slate-400">
-          <li>슈퍼관리자는 모든 권한을 가집니다.</li>
+          <li>최고관리자(SUPER)는 모든 메뉴/데이터 제약이 없습니다.</li>
           <li>메인/서브 관리자는 경비·입주민 메뉴만 ON/OFF 할 수 있습니다.</li>
           <li>같은 레벨(메인↔메인, 서브↔서브)은 서로의 메뉴를 볼 수도/조절할 수도 없습니다.</li>
-          <li>숨김(최고관리자 편집 모드에서 가리기)은 사이드바에서 보이지 않습니다.</li>
         </ul>
       </div>
+
+      {loadingConfig ? (
+        <div className="rounded-2xl border border-slate-200/80 bg-white/60 p-4 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
+          메뉴 설정을 불러오는 중...
+        </div>
+      ) : null}
+
+      {saveError ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+          {saveError}
+        </div>
+      ) : null}
 
       {columns.length === 0 ? (
         <div className="rounded-2xl border border-slate-200/80 bg-white/60 p-4 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
@@ -157,7 +235,7 @@ export default function RoleMenusPage() {
                         <button
                           type="button"
                           disabled={!allowed}
-                          onClick={() => setToggle(row.key, targetRole, !value)}
+                          onClick={() => void setToggle(row.key, targetRole, !value)}
                           className={`inline-flex w-24 items-center justify-between rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.25em] transition ${
                             !allowed
                               ? 'cursor-not-allowed border-slate-200/80 bg-slate-100 text-slate-400 dark:border-white/10 dark:bg-white/5'

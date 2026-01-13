@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import ComplexScopeSelect from './ComplexScopeSelect'
 import useAppSession from '../../lib/authSession'
 import { useAdminCustomization } from '../../lib/adminCustomization'
+import { useEffectiveMenuConfig } from '../../lib/menuConfig'
 
 type DashboardSidebarProps = {
   userLabel: string
@@ -17,11 +18,11 @@ type NavItem = { id: string; href: string; label: string }
 type NavGroup = { id: string; label: string; defaultChildId?: string; children: NavItem[] }
 
 const fallbackFlatItems = [
-  { href: '/dashboard', label: '대시보드' },
-  { href: '/dashboard/menus', label: '권한별 메뉴 관리' },
-  { href: '/dashboard/gas', label: '가스검침' },
-  { href: '/dashboard/logs', label: '활동 로그' },
-  { href: '/dashboard/settings', label: '설정' },
+  { id: 'dashboard', href: '/dashboard', label: '대시보드' },
+  { id: 'menus', href: '/dashboard/menus', label: '권한별 메뉴 관리' },
+  { id: 'gas', href: '/dashboard/gas', label: '가스검침' },
+  { id: 'logs', href: '/dashboard/logs', label: '활동 로그' },
+  { id: 'settings', href: '/dashboard/settings', label: '설정' },
 ]
 
 const fallbackManagementItems = [
@@ -61,6 +62,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
   const { session } = useAppSession()
   const isSuper = session?.role === 'SUPER'
   const { state } = useAdminCustomization()
+  const { config: menuConfig } = useEffectiveMenuConfig()
 
   const isActiveHref = (href: string) => pathname === href
 
@@ -89,21 +91,40 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
     }))
     .filter((g) => g.children.length > 0)
 
+  const applyConfig = React.useCallback(
+    (menuKey: string) => {
+      if (isSuper) return true
+      const v = menuConfig[menuKey]
+      return v === undefined ? true : Boolean(v)
+    },
+    [isSuper, menuConfig]
+  )
+
+  const managementItemsConfigured =
+    (managementItems as NavItem[]).filter((i) => applyConfig(i.id)) ?? ([] as NavItem[])
+  const groupsConfigured: NavGroup[] = groupsFromState
+    .filter((g) => applyConfig(g.id))
+    .map((g) => ({ ...g, children: g.children.filter((c) => applyConfig(c.id)) }))
+    .filter((g) => g.children.length > 0)
+
   const flatItemsFromState = rawMenus
     .filter((m) => m.id !== 'management')
     .filter((m) => !m.hidden)
     .filter((m) => m.href)
     .filter((m) => (m.children?.length ?? 0) === 0)
-    .map((m) => ({ href: m.href as string, label: m.label }))
+    .map((m) => ({ id: m.id, href: m.href as string, label: m.label }))
 
-  const effectiveGroups = groupsFromState.length ? groupsFromState : fallbackGroupItems
-  const effectiveFlatItems = flatItemsFromState.length ? flatItemsFromState : fallbackFlatItems
+  const flatItemsConfigured = isSuper ? flatItemsFromState : flatItemsFromState.filter((i) => applyConfig(i.id))
+
+  const effectiveGroups = groupsConfigured.length ? groupsConfigured : fallbackGroupItems
+  const effectiveFlatItems = flatItemsConfigured.length ? flatItemsConfigured : fallbackFlatItems
 
   const dashboardItem =
-    effectiveFlatItems.find((i) => i.href === '/dashboard') ?? ({ href: '/dashboard', label: '대시보드' } as const)
+    effectiveFlatItems.find((i) => i.href === '/dashboard') ??
+    ({ id: 'dashboard', href: '/dashboard', label: '대시보드' } as const)
   const otherFlatItems = effectiveFlatItems.filter((i) => i.href !== '/dashboard')
 
-  const isActiveManagement = (managementItems as NavItem[]).some((item) => pathname === item.href)
+  const isActiveManagement = managementItemsConfigured.some((item) => pathname === item.href)
   const [openGroupId, setOpenGroupId] = React.useState<string | null>('management')
 
   React.useEffect(() => {
@@ -174,7 +195,10 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
           type="button"
           onClick={() => {
             toggleGroup('management')
-            goToDefaultChild({ defaultChildId: managementMenu?.defaultChildId, children: managementItems as NavItem[] })
+            goToDefaultChild({
+              defaultChildId: managementMenu?.defaultChildId,
+              children: managementItemsConfigured as NavItem[],
+            })
           }}
           className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm transition ${
             isActiveManagement
@@ -188,7 +212,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
 
         {openGroupId === 'management' && (
           <div className="space-y-2 pl-3">
-            {managementItems.map((item) => {
+            {managementItemsConfigured.map((item) => {
               const isActive = isActiveHref(item.href as string)
               return (
                 <Link

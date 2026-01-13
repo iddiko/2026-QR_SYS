@@ -2,8 +2,9 @@
 
 export default function Footer() {
   return (
-    <footer className="fixed bottom-0 left-0 right-0 h-[100px] border-t border-white/5 bg-slate-950/90 px-6 py-4 text-center text-xs uppercase tracking-[0.4em] text-slate-500">
-      QR Parking SYS · Supabase · Vercel 자동 배포 · 모든 메뉴는 상위 관리자에게서 on/off
+    <footer className="fixed bottom-0 left-0 right-0 z-30 flex h-[60px] items-center justify-center border-t border-black/10 bg-black/85 px-6 text-center text-xs uppercase tracking-[0.4em] text-white/70 backdrop-blur dark:border-white/10 dark:bg-black/85 dark:text-white/70">
+      QR PARKING SYS · Supabase · Vercel · 권한별 메뉴 ON/OFF
     </footer>
   )
 }
+

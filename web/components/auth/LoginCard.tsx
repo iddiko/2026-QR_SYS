@@ -16,32 +16,42 @@ export default function LoginCard({ form, onChange, onSubmit, status, message }:
   const isFormValid = form.email !== '' && form.password !== ''
 
   return (
-    <div className="mx-auto w-full max-w-md rounded-3xl border border-white/10 bg-slate-900/60 p-8 shadow-[0_15px_35px_rgba(2,6,23,0.9)]">
-      <h2 className="text-xl font-semibold text-white">로그인 · 조직 확인</h2>
-      <p className="mt-2 text-sm text-slate-400">
-        슈퍼/메인/서브 관리자 또는 경비/입주민으로 로그인하면 역할별 대시보드로 이동합니다.
+    <div className="mx-auto w-full max-w-md rounded-3xl border border-white/10 bg-white/90 p-8 shadow-[0_15px_35px_rgba(2,6,23,0.08)] backdrop-blur dark:bg-slate-950/60 dark:shadow-[0_15px_35px_rgba(2,6,23,0.9)]">
+      <h2 className="text-xl font-semibold text-slate-950 dark:text-white">로그인</h2>
+      <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+        회원가입은 받지 않습니다. 메인/서브 관리자가 보낸 초대 메일로만 계정이 생성됩니다.
       </p>
 
       <form className="mt-6 space-y-4" onSubmit={(event) => event.preventDefault()}>
-        <label className="block text-xs uppercase tracking-[0.4em] text-slate-400">이메일</label>
-        <input
-          name="email"
-          type="email"
-          value={form.email}
-          onChange={onChange}
-          className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:border-emerald-400 focus:outline-none"
-          placeholder="admin@example.com"
-        />
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-[0.4em] text-slate-500 dark:text-slate-400">
+            이메일
+          </label>
+          <input
+            name="email"
+            type="email"
+            value={form.email}
+            onChange={onChange}
+            className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-slate-500"
+            placeholder="superadmin@example.com"
+            autoComplete="email"
+          />
+        </div>
 
-        <label className="block text-xs uppercase tracking-[0.4em] text-slate-400">비밀번호</label>
-        <input
-          name="password"
-          type="password"
-          value={form.password}
-          onChange={onChange}
-          className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:border-emerald-400 focus:outline-none"
-          placeholder="********"
-        />
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-[0.4em] text-slate-500 dark:text-slate-400">
+            비밀번호
+          </label>
+          <input
+            name="password"
+            type="password"
+            value={form.password}
+            onChange={onChange}
+            className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-slate-500"
+            placeholder="********"
+            autoComplete="current-password"
+          />
+        </div>
 
         <button
           type="button"
@@ -49,8 +59,8 @@ export default function LoginCard({ form, onChange, onSubmit, status, message }:
           disabled={!isFormValid || status === 'loading'}
           className={`w-full rounded-2xl px-4 py-3 text-sm font-semibold uppercase tracking-[0.3em] transition ${
             isFormValid
-              ? 'bg-emerald-500 text-slate-900 hover:bg-emerald-400'
-              : 'bg-white/10 text-slate-500 cursor-not-allowed'
+              ? 'bg-blue-600 text-white hover:bg-blue-500'
+              : 'cursor-not-allowed bg-slate-100 text-slate-400 dark:bg-white/10 dark:text-slate-500'
           }`}
         >
           {status === 'loading' ? '로그인 중...' : '로그인'}
@@ -58,12 +68,10 @@ export default function LoginCard({ form, onChange, onSubmit, status, message }:
       </form>
 
       {message && (
-        <p className={`mt-4 text-xs ${status === 'error' ? 'text-rose-400' : 'text-emerald-300'}`}>
-          {message}
-        </p>
+        <p className={`mt-4 text-xs ${status === 'error' ? 'text-rose-600' : 'text-emerald-600'}`}>{message}</p>
       )}
-      <p className="mt-2 text-xs text-slate-500">
-        로그인 시 Supabase Auth와 역할별 메뉴 구성이 활성화됩니다.
+      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+        로그인 후 역할에 따라 대시보드/메뉴가 자동으로 구성됩니다.
       </p>
     </div>
   )

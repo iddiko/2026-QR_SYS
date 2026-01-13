@@ -3,10 +3,25 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light dark;
   font-family: 'Pretendard', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color-scheme: light;
+  --app-bg: 248 250 252;
+  --app-fg: 15 23 42;
+  --app-surface: 255 255 255;
+  --app-primary: 37 99 235;
+  --app-primary-contrast: 255 255 255;
+}
+
+.dark {
+  color-scheme: dark;
+  --app-bg: 2 6 23;
+  --app-fg: 226 232 240;
+  --app-surface: 15 23 42;
+  --app-primary: 56 189 248;
+  --app-primary-contrast: 2 6 23;
 }
 
 body {
-  @apply bg-slate-950 text-white;
+  background-color: rgb(var(--app-bg));
+  color: rgb(var(--app-fg));
 }

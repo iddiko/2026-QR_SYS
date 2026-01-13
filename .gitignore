@@ -4,3 +4,10 @@ web/.next
 .env.local
 .env
 dist
+supabase/.temp
+supabase/.branches
+web/dev*.txt
+web/dev*.out.txt
+web/dev*.err.txt
+web/devlog*.txt
+web/devchk*.txt

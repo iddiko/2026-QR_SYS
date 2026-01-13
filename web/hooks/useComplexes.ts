@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import supabase from '../lib/supabaseClient'
+import { getClientAuthHeaders } from '../lib/clientAuth'
 
 export type ComplexPreview = {
   id: string
@@ -32,6 +33,33 @@ export default function useComplexes(pageSize = 12): UseComplexesResult {
       setLoading(true)
       setError(null)
 
+      const headers = await getClientAuthHeaders()
+      const hasAuth = Boolean(headers.Authorization || headers['x-demo-role'])
+
+      // NOTE: super/main/sub scope enforcement happens on the server route.
+      if (hasAuth) {
+        const limit = (nextPage + 1) * pageSize
+        const params = new URLSearchParams()
+        params.set('limit', String(limit))
+        if (filter.length > 0) params.set('q', filter)
+
+        const res = await fetch(`/api/complexes?${params.toString()}`, { headers })
+        const json = (await res.json()) as { error?: string; complexes?: ComplexPreview[] }
+        if (!res.ok) {
+          setError(json.error ?? '단지 목록을 불러오지 못했습니다.')
+          setLoading(false)
+          return
+        }
+
+        const payload: ComplexPreview[] = json.complexes ?? []
+        setComplexes(payload)
+        setPageIndex(nextPage)
+        setHasMore(payload.length === limit)
+        setLoading(false)
+        return
+      }
+
+      // Fallback (no session): try direct query (will depend on RLS settings)
       const offset = nextPage * pageSize
       let query = supabase
         .from('complexes')
@@ -39,9 +67,7 @@ export default function useComplexes(pageSize = 12): UseComplexesResult {
         .order('created_at', { ascending: false })
         .range(offset, offset + pageSize - 1)
 
-      if (filter.length > 0) {
-        query = query.ilike('name', `%${filter}%`)
-      }
+      if (filter.length > 0) query = query.ilike('name', `%${filter}%`)
 
       const { data, error: fetchError } = await query
 

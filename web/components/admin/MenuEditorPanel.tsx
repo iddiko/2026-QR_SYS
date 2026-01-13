@@ -51,6 +51,10 @@ export default function MenuEditorPanel({ open, onClose }: MenuEditorPanelProps)
     setDraft((prev) => {
       const next = structuredClone(prev) as MenuItem[]
       const parent = next[parentIndex]
+      // 부모가 링크(href)를 가진 상태에서 하위 메뉴를 추가하면,
+      // 사이드바는 "그룹( children )"으로 취급하지 않아 하위 메뉴가 보이지 않을 수 있습니다.
+      // 따라서 하위 메뉴가 생기는 순간 부모를 그룹으로 전환합니다.
+      if (parent.href) parent.href = undefined
       const child: MenuItem = { id: newId('submenu'), label: '새 하위 메뉴', href: `/dashboard/custom/${pageId}` }
       parent.children = [...(parent.children ?? []), child]
       return next
@@ -239,4 +243,3 @@ export default function MenuEditorPanel({ open, onClose }: MenuEditorPanelProps)
     </div>
   )
 }
-

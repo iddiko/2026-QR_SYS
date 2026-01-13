@@ -55,7 +55,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
 
   const otherGroups = state.menus
     .filter((m) => m.id !== 'management')
-    .filter((m) => !m.href && m.children?.length)
+    .filter((m) => (m.children?.length ?? 0) > 0)
     .map((m) => ({
       id: m.id,
       label: m.label,
@@ -65,6 +65,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
   const flatItemsFromState = state.menus
     .filter((m) => m.id !== 'management')
     .filter((m) => m.href)
+    .filter((m) => (m.children?.length ?? 0) === 0)
     .map((m) => ({ href: m.href as string, label: m.label }))
 
   const effectiveGroups = otherGroups.length ? otherGroups : fallbackGroupItems
@@ -206,4 +207,3 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
     </aside>
   )
 }
-

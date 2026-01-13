@@ -7,6 +7,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Supabase 환경 변수가 설정되지 않았습니다.')
 }
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    flowType: 'pkce',
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+  },
+})
 
 export default supabase
+

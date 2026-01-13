@@ -103,7 +103,7 @@ export default function MenuEditorPanel({ open, onClose }: MenuEditorPanelProps)
         onClick={onClose}
       />
       <aside
-        className={`absolute right-0 top-16 h-[calc(100vh-4rem-60px)] w-[420px] border-l border-slate-200/80 bg-white/90 p-5 backdrop-blur transition-transform dark:border-white/10 dark:bg-slate-950/85 ${
+        className={`absolute right-0 top-16 flex h-[calc(100vh-4rem-60px)] w-[420px] flex-col border-l border-slate-200/80 bg-white/90 p-5 backdrop-blur transition-transform dark:border-white/10 dark:bg-slate-950/85 ${
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
@@ -149,7 +149,7 @@ export default function MenuEditorPanel({ open, onClose }: MenuEditorPanelProps)
           </button>
         </div>
 
-        <div className="mt-5 space-y-4 overflow-y-auto pr-1">
+        <div className="mt-5 flex-1 space-y-4 overflow-auto pr-1">
           {draft.map((item, index) => (
             <div key={item.id} className="rounded-3xl border border-slate-200/70 bg-white/70 p-4 dark:border-white/10 dark:bg-white/5">
               <div className="flex items-center gap-2">

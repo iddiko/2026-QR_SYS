@@ -42,17 +42,16 @@ export default function MenuEditorPanel({ open, onClose }: MenuEditorPanelProps)
   }
 
   const addMenu = () => {
-    setDraft((prev) => [
-      ...prev,
-      { id: newId('menu'), label: '새 메뉴', href: `/dashboard/custom/${newId('page')}` },
-    ])
+    const pageId = newId('page')
+    setDraft((prev) => [...prev, { id: newId('menu'), label: '새 메뉴', href: `/dashboard/custom/${pageId}` }])
   }
 
   const addSubMenu = (parentIndex: number) => {
+    const pageId = newId('page')
     setDraft((prev) => {
       const next = structuredClone(prev) as MenuItem[]
       const parent = next[parentIndex]
-      const child: MenuItem = { id: newId('submenu'), label: '새 하위메뉴', href: `/dashboard/custom/${newId('page')}` }
+      const child: MenuItem = { id: newId('submenu'), label: '새 하위 메뉴', href: `/dashboard/custom/${pageId}` }
       parent.children = [...(parent.children ?? []), child]
       return next
     })
@@ -98,18 +97,12 @@ export default function MenuEditorPanel({ open, onClose }: MenuEditorPanelProps)
 
   return (
     <div className="fixed inset-0 z-40" aria-hidden={!open}>
-      <div
-        className={`absolute inset-0 bg-black/20 transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`}
-        onClick={onClose}
-      />
-      <aside
-        className={`absolute right-0 top-16 flex h-[calc(100vh-4rem-60px)] w-[420px] flex-col border-l border-slate-200/80 bg-white/90 p-5 backdrop-blur transition-transform dark:border-white/10 dark:bg-slate-950/85 ${
-          open ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        <div className="flex items-center justify-between">
+      <div className="absolute inset-0 bg-black/20" onClick={onClose} />
+
+      <aside className="absolute right-0 top-16 flex h-[calc(100vh-4rem-60px)] w-[380px] flex-col border-l border-slate-200/80 bg-white/90 p-4 backdrop-blur dark:border-white/10 dark:bg-slate-950/85">
+        <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.4em] text-blue-600 dark:text-sky-300">최고관리자 전용</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.4em] text-blue-600 dark:text-sky-300">최고관리자 편집 모드</p>
             <h3 className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">메뉴 편집</h3>
           </div>
           <button
@@ -121,11 +114,11 @@ export default function MenuEditorPanel({ open, onClose }: MenuEditorPanelProps)
           </button>
         </div>
 
-        <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">
-          메뉴/하위메뉴 추가, 이름 변경, 순서 변경을 할 수 있습니다. 새 메뉴는 기본적으로 `dashboard/custom/...` 페이지로 연결됩니다.
+        <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+          메뉴/하위 메뉴를 추가하고 이름·순서를 변경합니다. 저장하면 사이드바와 “권한별 메뉴 관리”에 동일하게 반영됩니다.
         </p>
 
-        <div className="mt-4 flex gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
             onClick={addMenu}
@@ -149,9 +142,12 @@ export default function MenuEditorPanel({ open, onClose }: MenuEditorPanelProps)
           </button>
         </div>
 
-        <div className="mt-5 flex-1 space-y-4 overflow-auto pr-1">
+        <div className="mt-3 flex-1 space-y-3 overflow-auto pr-1">
           {draft.map((item, index) => (
-            <div key={item.id} className="rounded-3xl border border-slate-200/70 bg-white/70 p-4 dark:border-white/10 dark:bg-white/5">
+            <div
+              key={item.id}
+              className="rounded-3xl border border-slate-200/70 bg-white/70 p-3 dark:border-white/10 dark:bg-white/5"
+            >
               <div className="flex items-center gap-2">
                 <input
                   value={item.label}
@@ -183,16 +179,16 @@ export default function MenuEditorPanel({ open, onClose }: MenuEditorPanelProps)
                 </button>
               </div>
 
-              <div className="mt-2 flex items-center justify-between">
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {item.href ? `링크: ${item.href}` : '그룹(하위메뉴만 있는 메뉴)'}
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                  {item.href ? `링크: ${item.href}` : '그룹(하위 메뉴를 펼치는 메뉴)'}
                 </p>
                 <button
                   type="button"
                   onClick={() => addSubMenu(index)}
-                  className="rounded-full border border-slate-200/70 bg-white/60 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-700 hover:bg-white dark:border-white/10 dark:bg-white/10 dark:text-slate-200 dark:hover:bg-white/10"
+                  className="shrink-0 rounded-full border border-slate-200/70 bg-white/60 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-700 hover:bg-white dark:border-white/10 dark:bg-white/10 dark:text-slate-200 dark:hover:bg-white/10"
                 >
-                  하위메뉴 추가
+                  하위 메뉴 추가
                 </button>
               </div>
 
@@ -203,7 +199,7 @@ export default function MenuEditorPanel({ open, onClose }: MenuEditorPanelProps)
                       key={child.id}
                       className="flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white/80 p-2 dark:border-white/10 dark:bg-white/5"
                     >
-                      <span className="px-2 text-xs text-slate-400">↳</span>
+                      <span className="px-1 text-xs text-slate-400">↳</span>
                       <input
                         value={child.label}
                         onChange={(e) => updateLabel([index, childIndex], e.target.value)}
@@ -243,3 +239,4 @@ export default function MenuEditorPanel({ open, onClose }: MenuEditorPanelProps)
     </div>
   )
 }
+

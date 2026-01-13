@@ -59,25 +59,36 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
 
   const isActiveHref = (href: string) => pathname === href
 
-  const managementItems =
-    state.menus.find((m) => m.id === 'management')?.children?.filter((c) => c.href) ?? fallbackManagementItems
+  const rawMenus = Array.isArray(state.menus) && state.menus.length > 0 ? state.menus : []
 
-  const otherGroups = state.menus
+  const managementMenu = rawMenus.find((m) => m.id === 'management' && !m.hidden)
+  const managementLabel = managementMenu?.label ?? '단지/동/입주민 관리'
+
+  const managementItems =
+    managementMenu?.children?.filter((c) => !c.hidden && c.href).map((c) => ({ href: c.href as string, label: c.label })) ??
+    fallbackManagementItems
+
+  const groupsFromState = rawMenus
     .filter((m) => m.id !== 'management')
+    .filter((m) => !m.hidden)
     .filter((m) => (m.children?.length ?? 0) > 0)
     .map((m) => ({
       id: m.id,
       label: m.label,
-      children: (m.children ?? []).filter((c) => c.href).map((c) => ({ href: c.href as string, label: c.label })),
+      children: (m.children ?? [])
+        .filter((c) => !c.hidden && c.href)
+        .map((c) => ({ href: c.href as string, label: c.label })),
     }))
+    .filter((g) => g.children.length > 0)
 
-  const flatItemsFromState = state.menus
+  const flatItemsFromState = rawMenus
     .filter((m) => m.id !== 'management')
+    .filter((m) => !m.hidden)
     .filter((m) => m.href)
     .filter((m) => (m.children?.length ?? 0) === 0)
     .map((m) => ({ href: m.href as string, label: m.label }))
 
-  const effectiveGroups = otherGroups.length ? otherGroups : fallbackGroupItems
+  const effectiveGroups = groupsFromState.length ? groupsFromState : fallbackGroupItems
   const effectiveFlatItems = flatItemsFromState.length ? flatItemsFromState : fallbackFlatItems
 
   const dashboardItem =
@@ -85,7 +96,6 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
   const otherFlatItems = effectiveFlatItems.filter((i) => i.href !== '/dashboard')
 
   const isActiveManagement = managementItems.some((item) => pathname === item.href)
-
   const [openGroupId, setOpenGroupId] = React.useState<string | null>('management')
 
   React.useEffect(() => {
@@ -141,7 +151,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
               : 'border-slate-200/70 bg-transparent text-slate-800 hover:border-blue-500/20 hover:bg-white/50 dark:border-white/5 dark:text-slate-200 dark:hover:bg-white/5'
           }`}
         >
-          <span className="font-semibold">단지/동/입주민 관리</span>
+          <span className="font-semibold">{managementLabel}</span>
           <Chevron open={openGroupId === 'management'} />
         </button>
 

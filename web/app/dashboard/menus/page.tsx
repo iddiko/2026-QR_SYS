@@ -13,12 +13,13 @@ type MenuRow = {
   key: string
   label: string
   depth: number
+  hidden: boolean
 }
 
 function flattenMenus(nodes: MenuItem[], depth = 0): MenuRow[] {
   const rows: MenuRow[] = []
   for (const node of nodes) {
-    rows.push({ key: node.id, label: node.label, depth })
+    rows.push({ key: node.id, label: node.label, depth, hidden: node.hidden === true })
     if (node.children?.length) rows.push(...flattenMenus(node.children, depth + 1))
   }
   return rows
@@ -54,7 +55,7 @@ export default function RoleMenusPage() {
   const routeKey = '/dashboard/menus'
 
   const { state } = useAdminCustomization()
-  const rows = React.useMemo(() => flattenMenus(state.menus), [state.menus])
+  const rows = React.useMemo(() => flattenMenus(state.menus ?? []), [state.menus])
 
   const [toggles, setToggles] = React.useState<ToggleState>(() => ({}))
 
@@ -85,10 +86,11 @@ export default function RoleMenusPage() {
     <section className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/70 p-6 backdrop-blur dark:border-white/10 dark:bg-slate-950/40">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.4em] text-blue-600 dark:text-sky-300">권한</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-blue-600 dark:text-sky-300">권한</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">권한별 메뉴 관리</h2>
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-            모든 메뉴는 역할별로 ON/OFF 할 수 있습니다. 최고관리자가 “메뉴 편집”에서 추가한 메뉴도 여기에 자동으로 추가됩니다.
+            가로: 메인 관리자 / 서브 관리자 / 경비 / 입주민 · 세로: 모든 메뉴(대분류/하위메뉴 포함). 각 셀에서 ON/OFF로
+            표시 여부를 관리합니다.
           </p>
         </div>
         <PageEditButton routeKey={routeKey} />
@@ -99,15 +101,16 @@ export default function RoleMenusPage() {
       <div className="rounded-2xl border border-slate-200/80 bg-white/60 p-4 text-sm text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
         <p className="font-semibold text-slate-900 dark:text-white">규칙</p>
         <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600 dark:text-slate-400">
-          <li>최고관리자는 메인/서브/경비/입주민 메뉴를 모두 관리합니다.</li>
-          <li>메인/서브 관리자는 경비/입주민 메뉴만 ON/OFF 할 수 있습니다.</li>
-          <li>동일 레벨(메인↔메인, 서브↔서브)끼리는 서로의 메뉴를 볼 수도, 변경할 수도 없습니다.</li>
+          <li>슈퍼관리자는 모든 권한을 가집니다.</li>
+          <li>메인/서브 관리자는 경비·입주민 메뉴만 ON/OFF 할 수 있습니다.</li>
+          <li>같은 레벨(메인↔메인, 서브↔서브)은 서로의 메뉴를 볼 수도/조절할 수도 없습니다.</li>
+          <li>숨김(최고관리자 편집 모드에서 가리기)은 사이드바에서 보이지 않습니다.</li>
         </ul>
       </div>
 
       {columns.length === 0 ? (
         <div className="rounded-2xl border border-slate-200/80 bg-white/60 p-4 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
-          현재 역할에서는 권한별 메뉴 관리를 사용할 수 없습니다.
+          현재 권한에서는 메뉴 ON/OFF를 조절할 수 없습니다.
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-slate-200/80 dark:border-white/10">
@@ -132,13 +135,18 @@ export default function RoleMenusPage() {
                 <tr key={row.key} className="border-b border-white/5 last:border-b-0">
                   <td className="px-4 py-3">
                     <span
-                      className={`inline-flex items-center ${
+                      className={`inline-flex items-center gap-2 ${
                         row.depth === 0 ? 'font-semibold text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'
-                      }`}
+                      } ${row.hidden ? 'opacity-60' : ''}`}
                       style={{ paddingLeft: `${row.depth * 14}px` }}
                     >
-                      {row.depth > 0 && <span className="mr-2 text-slate-300 dark:text-slate-600">↳</span>}
+                      {row.depth > 0 && <span className="mr-1 text-slate-300 dark:text-slate-600">└</span>}
                       {row.label}
+                      {row.hidden && (
+                        <span className="rounded-full border border-slate-200/70 bg-white px-2 py-0.5 text-[10px] text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                          숨김
+                        </span>
+                      )}
                     </span>
                   </td>
                   {columns.map((targetRole) => {

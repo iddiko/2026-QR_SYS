@@ -7,6 +7,7 @@ import { getClientAuthHeaders } from './clientAuth'
 export type MenuItem = {
   id: string
   label: string
+  hidden?: boolean
   href?: string
   children?: MenuItem[]
 }
@@ -68,12 +69,15 @@ function safeParse(value: string | null): CustomizationState | null {
   try {
     const parsed = JSON.parse(value) as Partial<CustomizationState>
     if (!parsed || typeof parsed !== 'object') return null
+
     const editMode = parsed.editMode === true
-    const menus = Array.isArray(parsed.menus) ? (parsed.menus as MenuItem[]) : defaultMenus
+    const menus =
+      Array.isArray(parsed.menus) && parsed.menus.length > 0 ? (parsed.menus as MenuItem[]) : defaultMenus
     const pages =
       parsed.pages && typeof parsed.pages === 'object'
         ? (parsed.pages as Record<string, PageCustomization>)
         : {}
+
     return { editMode, menus, pages }
   } catch {
     return null
@@ -103,7 +107,6 @@ export default function AdminCustomizationProvider({ children }: { children: Rea
   const serverSyncEnabledRef = React.useRef(false)
   const hydratedRef = React.useRef(false)
 
-  // Load from localStorage (once)
   React.useEffect(() => {
     if (hydratedRef.current) return
     hydratedRef.current = true
@@ -111,7 +114,6 @@ export default function AdminCustomizationProvider({ children }: { children: Rea
     if (stored) setState(stored)
   }, [])
 
-  // If SUPER, also load from DB (global)
   React.useEffect(() => {
     if (!isSuper) return
     let cancelled = false
@@ -123,16 +125,32 @@ export default function AdminCustomizationProvider({ children }: { children: Rea
       const res = await fetch('/api/admin/customization', { headers })
       const json = (await res.json()) as { menus?: unknown; pages?: unknown }
       if (!res.ok) return
-
       if (cancelled) return
-      const menus = Array.isArray(json.menus) ? (json.menus as MenuItem[]) : undefined
-      const pages = json.pages && typeof json.pages === 'object' ? (json.pages as Record<string, PageCustomization>) : undefined
-      if (!menus && !pages) return
+
+      const rawMenus = Array.isArray(json.menus) ? (json.menus as MenuItem[]) : undefined
+      const rawPages =
+        json.pages && typeof json.pages === 'object' ? (json.pages as Record<string, PageCustomization>) : undefined
+
+      const hasMenus = Array.isArray(rawMenus) && rawMenus.length > 0
+      const hasPages = rawPages && Object.keys(rawPages).length > 0
+
+      // 서버에 "빈 배열/빈 객체"만 있는 초기 상태면 기본 메뉴를 유지하고, 기본값을 한번 저장합니다.
+      if (!hasMenus && !hasPages) {
+        setState((prev) => ({ ...prev, menus: prev.menus.length > 0 ? prev.menus : defaultMenus }))
+        serverSyncEnabledRef.current = true
+
+        await fetch('/api/admin/customization', {
+          method: 'PUT',
+          headers: { ...headers, 'content-type': 'application/json' },
+          body: JSON.stringify({ menus: defaultMenus, pages: {} }),
+        })
+        return
+      }
 
       setState((prev) => ({
         ...prev,
-        menus: menus ?? prev.menus,
-        pages: pages ?? prev.pages,
+        menus: hasMenus ? (rawMenus as MenuItem[]) : prev.menus,
+        pages: hasPages ? (rawPages as Record<string, PageCustomization>) : prev.pages,
       }))
       serverSyncEnabledRef.current = true
     }
@@ -143,12 +161,10 @@ export default function AdminCustomizationProvider({ children }: { children: Rea
     }
   }, [isSuper])
 
-  // Always keep localStorage updated (cache)
   React.useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   }, [state])
 
-  // Persist menus/pages to DB (SUPER only), debounced
   useDebouncedEffect(
     () => {
       if (!isSuper) return
@@ -197,17 +213,18 @@ export default function AdminCustomizationProvider({ children }: { children: Rea
   const resetAll = React.useCallback(() => {
     setState(getDefaultState())
     localStorage.removeItem(STORAGE_KEY)
-    if (isSuper) {
-      void (async () => {
-        const headers = await getClientAuthHeaders()
-        if (!headers.Authorization && !headers['x-demo-role']) return
-        await fetch('/api/admin/customization', {
-          method: 'PUT',
-          headers: { ...headers, 'content-type': 'application/json' },
-          body: JSON.stringify({ menus: defaultMenus, pages: {} }),
-        })
-      })()
-    }
+
+    if (!isSuper) return
+    void (async () => {
+      const headers = await getClientAuthHeaders()
+      if (!headers.Authorization && !headers['x-demo-role']) return
+
+      await fetch('/api/admin/customization', {
+        method: 'PUT',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ menus: defaultMenus, pages: {} }),
+      })
+    })()
   }, [isSuper])
 
   const value = React.useMemo<AdminCustomizationContextValue>(

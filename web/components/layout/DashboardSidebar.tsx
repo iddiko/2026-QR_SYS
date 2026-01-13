@@ -38,12 +38,21 @@ const fallbackGroupItems = [
   },
 ]
 
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <span
+      className={`inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200/70 bg-white/60 text-slate-600 transition dark:border-white/10 dark:bg-white/10 dark:text-slate-200 ${
+        open ? 'rotate-90' : ''
+      }`}
+      aria-hidden="true"
+    >
+      &gt;
+    </span>
+  )
+}
+
 export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }: DashboardSidebarProps) {
   const pathname = usePathname()
-  const [openGroups, setOpenGroups] = React.useState<Record<string, boolean>>({
-    management: true,
-    ads: true,
-  })
   const { session } = useAppSession()
   const isSuper = session?.role === 'SUPER'
   const { state } = useAdminCustomization()
@@ -71,13 +80,25 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
   const effectiveGroups = otherGroups.length ? otherGroups : fallbackGroupItems
   const effectiveFlatItems = flatItemsFromState.length ? flatItemsFromState : fallbackFlatItems
 
-  const dashboardItem = effectiveFlatItems.find((i) => i.href === '/dashboard') ?? { href: '/dashboard', label: '대시보드' }
+  const dashboardItem =
+    effectiveFlatItems.find((i) => i.href === '/dashboard') ?? ({ href: '/dashboard', label: '대시보드' } as const)
   const otherFlatItems = effectiveFlatItems.filter((i) => i.href !== '/dashboard')
 
   const isActiveManagement = managementItems.some((item) => pathname === item.href)
 
+  const [openGroupId, setOpenGroupId] = React.useState<string | null>('management')
+
+  React.useEffect(() => {
+    if (isActiveManagement) {
+      setOpenGroupId('management')
+      return
+    }
+    const activeGroup = effectiveGroups.find((g) => g.children.some((c) => c.href === pathname))
+    if (activeGroup) setOpenGroupId(activeGroup.id)
+  }, [effectiveGroups, isActiveManagement, pathname])
+
   const toggleGroup = (groupId: string) => {
-    setOpenGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }))
+    setOpenGroupId((prev) => (prev === groupId ? null : groupId))
   }
 
   return (
@@ -121,10 +142,10 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
           }`}
         >
           <span className="font-semibold">단지/동/입주민 관리</span>
-          <span className="text-xs text-slate-500 dark:text-slate-400">{openGroups.management ? '접기' : '펼치기'}</span>
+          <Chevron open={openGroupId === 'management'} />
         </button>
 
-        {openGroups.management && (
+        {openGroupId === 'management' && (
           <div className="space-y-2 pl-3">
             {managementItems.map((item) => {
               const isActive = isActiveHref(item.href as string)
@@ -146,7 +167,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
         )}
 
         {effectiveGroups.map((group) => {
-          const isOpen = openGroups[group.id] ?? true
+          const isOpen = openGroupId === group.id
           const isActiveGroup = group.children.some((c) => pathname === c.href)
           return (
             <div key={group.id} className="space-y-2">
@@ -160,7 +181,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
                 }`}
               >
                 <span className="font-semibold">{group.label}</span>
-                <span className="text-xs text-slate-500 dark:text-slate-400">{isOpen ? '접기' : '펼치기'}</span>
+                <Chevron open={isOpen} />
               </button>
 
               {isOpen && (
@@ -207,3 +228,4 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
     </aside>
   )
 }
+

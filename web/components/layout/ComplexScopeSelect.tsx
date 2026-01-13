@@ -2,7 +2,8 @@
 
 import React from 'react'
 import useComplexes from '../../hooks/useComplexes'
-import { ComplexScope, useComplexScope } from '../../lib/complexScope'
+import type { ComplexScope } from '../../lib/complexScope'
+import { useComplexScope } from '../../lib/complexScope'
 
 export default function ComplexScopeSelect() {
   const { scope, setScope } = useComplexScope()
@@ -39,3 +40,4 @@ export default function ComplexScopeSelect() {
     </div>
   )
 }
+

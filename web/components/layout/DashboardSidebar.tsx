@@ -70,8 +70,10 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
   const effectiveGroups = otherGroups.length ? otherGroups : fallbackGroupItems
   const effectiveFlatItems = flatItemsFromState.length ? flatItemsFromState : fallbackFlatItems
 
+  const dashboardItem = effectiveFlatItems.find((i) => i.href === '/dashboard') ?? { href: '/dashboard', label: '대시보드' }
+  const otherFlatItems = effectiveFlatItems.filter((i) => i.href !== '/dashboard')
+
   const isActiveManagement = managementItems.some((item) => pathname === item.href)
-  const isActiveAnyGroup = effectiveGroups.some((g) => g.children.some((c) => pathname === c.href))
 
   const toggleGroup = (groupId: string) => {
     setOpenGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }))
@@ -97,6 +99,17 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
       </div>
 
       <nav className="mt-6 space-y-2">
+        <Link
+          href={dashboardItem.href}
+          className={`block rounded-2xl border px-4 py-3 text-sm transition ${
+            isActiveHref(dashboardItem.href)
+              ? 'border-blue-500/30 bg-blue-500/10 text-slate-950 dark:text-white'
+              : 'border-slate-200/70 bg-transparent text-slate-800 hover:border-blue-500/20 hover:bg-white/50 dark:border-white/5 dark:text-slate-200 dark:hover:bg-white/5'
+          }`}
+        >
+          <span className="font-semibold">{dashboardItem.label}</span>
+        </Link>
+
         <button
           type="button"
           onClick={() => toggleGroup('management')}
@@ -107,9 +120,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
           }`}
         >
           <span className="font-semibold">단지/동/입주민 관리</span>
-          <span className="text-xs text-slate-500 dark:text-slate-400">
-            {openGroups.management ? '접기' : '펼치기'}
-          </span>
+          <span className="text-xs text-slate-500 dark:text-slate-400">{openGroups.management ? '접기' : '펼치기'}</span>
         </button>
 
         {openGroups.management && (
@@ -175,7 +186,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
           )
         })}
 
-        {effectiveFlatItems.map((item) => {
+        {otherFlatItems.map((item) => {
           const isActive = isActiveHref(item.href)
           return (
             <Link
@@ -195,3 +206,4 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
     </aside>
   )
 }
+

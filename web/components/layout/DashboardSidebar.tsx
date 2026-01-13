@@ -2,7 +2,7 @@
 
 import React from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import ComplexScopeSelect from './ComplexScopeSelect'
 import useAppSession from '../../lib/authSession'
 import { useAdminCustomization } from '../../lib/adminCustomization'
@@ -13,6 +13,9 @@ type DashboardSidebarProps = {
   complexLabel?: string
 }
 
+type NavItem = { id: string; href: string; label: string }
+type NavGroup = { id: string; label: string; defaultChildId?: string; children: NavItem[] }
+
 const fallbackFlatItems = [
   { href: '/dashboard', label: '대시보드' },
   { href: '/dashboard/menus', label: '권한별 메뉴 관리' },
@@ -22,18 +25,19 @@ const fallbackFlatItems = [
 ]
 
 const fallbackManagementItems = [
-  { href: '/dashboard/complexes', label: '단지 관리' },
-  { href: '/dashboard/buildings', label: '동 관리' },
-  { href: '/dashboard/resident-qr', label: '입주민/QR 관리' },
+  { id: 'complexes', href: '/dashboard/complexes', label: '단지 관리' },
+  { id: 'buildings', href: '/dashboard/buildings', label: '동 관리' },
+  { id: 'resident-qr', href: '/dashboard/resident-qr', label: '입주민/QR 관리' },
 ]
 
 const fallbackGroupItems = [
   {
     id: 'ads',
     label: '소식/광고 관리',
+    defaultChildId: 'news',
     children: [
-      { href: '/dashboard/ads/news', label: '소식 관리' },
-      { href: '/dashboard/ads/ads', label: '광고 관리' },
+      { id: 'news', href: '/dashboard/ads/news', label: '소식 관리' },
+      { id: 'ads-board', href: '/dashboard/ads/ads', label: '광고 관리' },
     ],
   },
 ]
@@ -53,6 +57,7 @@ function Chevron({ open }: { open: boolean }) {
 
 export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }: DashboardSidebarProps) {
   const pathname = usePathname()
+  const router = useRouter()
   const { session } = useAppSession()
   const isSuper = session?.role === 'SUPER'
   const { state } = useAdminCustomization()
@@ -65,19 +70,22 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
   const managementLabel = managementMenu?.label ?? '단지/동/입주민 관리'
 
   const managementItems =
-    managementMenu?.children?.filter((c) => !c.hidden && c.href).map((c) => ({ href: c.href as string, label: c.label })) ??
+    managementMenu?.children
+      ?.filter((c) => !c.hidden && c.href)
+      .map((c) => ({ id: c.id, href: c.href as string, label: c.label })) ??
     fallbackManagementItems
 
-  const groupsFromState = rawMenus
+  const groupsFromState: NavGroup[] = rawMenus
     .filter((m) => m.id !== 'management')
     .filter((m) => !m.hidden)
     .filter((m) => (m.children?.length ?? 0) > 0)
     .map((m) => ({
       id: m.id,
       label: m.label,
+      defaultChildId: m.defaultChildId,
       children: (m.children ?? [])
         .filter((c) => !c.hidden && c.href)
-        .map((c) => ({ href: c.href as string, label: c.label })),
+        .map((c) => ({ id: c.id, href: c.href as string, label: c.label })),
     }))
     .filter((g) => g.children.length > 0)
 
@@ -95,7 +103,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
     effectiveFlatItems.find((i) => i.href === '/dashboard') ?? ({ href: '/dashboard', label: '대시보드' } as const)
   const otherFlatItems = effectiveFlatItems.filter((i) => i.href !== '/dashboard')
 
-  const isActiveManagement = managementItems.some((item) => pathname === item.href)
+  const isActiveManagement = (managementItems as NavItem[]).some((item) => pathname === item.href)
   const [openGroupId, setOpenGroupId] = React.useState<string | null>('management')
 
   React.useEffect(() => {
@@ -109,6 +117,26 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
 
   const toggleGroup = (groupId: string) => {
     setOpenGroupId((prev) => (prev === groupId ? null : groupId))
+  }
+
+  const pickDefaultHref = React.useCallback(
+    (group: { defaultChildId?: string; children: NavItem[] }) => {
+      const children = group.children ?? []
+      if (children.length === 0) return null
+      if (group.defaultChildId) {
+        const match = children.find((c) => c.id === group.defaultChildId)
+        if (match) return match.href
+      }
+      return children[0].href
+    },
+    []
+  )
+
+  const goToDefaultChild = (group: { defaultChildId?: string; children: NavItem[] }) => {
+    const defaultHref = pickDefaultHref(group)
+    if (!defaultHref) return
+    const alreadyInside = group.children.some((c) => c.href === pathname)
+    if (!alreadyInside) router.push(defaultHref)
   }
 
   return (
@@ -144,7 +172,10 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
 
         <button
           type="button"
-          onClick={() => toggleGroup('management')}
+          onClick={() => {
+            toggleGroup('management')
+            goToDefaultChild({ defaultChildId: managementMenu?.defaultChildId, children: managementItems as NavItem[] })
+          }}
           className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm transition ${
             isActiveManagement
               ? 'border-blue-500/30 bg-blue-500/10 text-slate-950 dark:text-white'
@@ -183,7 +214,10 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
             <div key={group.id} className="space-y-2">
               <button
                 type="button"
-                onClick={() => toggleGroup(group.id)}
+                onClick={() => {
+                  toggleGroup(group.id)
+                  goToDefaultChild(group)
+                }}
                 className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm transition ${
                   isActiveGroup
                     ? 'border-blue-500/30 bg-blue-500/10 text-slate-950 dark:text-white'
@@ -238,4 +272,3 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
     </aside>
   )
 }
-

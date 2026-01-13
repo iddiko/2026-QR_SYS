@@ -50,6 +50,16 @@ export default function MenuEditorPanel({ open, onClose }: MenuEditorPanelProps)
     })
   }
 
+  const setDefaultChild = (parentIndex: number, childId: string) => {
+    setDraft((prev) => {
+      const next = structuredClone(prev) as MenuItem[]
+      const parent = next[parentIndex]
+      if (!parent.children?.length) return prev
+      parent.defaultChildId = childId || undefined
+      return next
+    })
+  }
+
   const addMenu = () => {
     const pageId = newId('page')
     setDraft((prev) => [...prev, { id: newId('menu'), label: '새 메뉴', href: `/dashboard/custom/${pageId}` }])
@@ -222,6 +232,23 @@ export default function MenuEditorPanel({ open, onClose }: MenuEditorPanelProps)
               </div>
 
               {item.children?.length ? (
+                <div className="mt-3 flex items-center justify-between gap-2 rounded-2xl border border-slate-200/70 bg-white/80 p-3 text-xs text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                  <span className="font-semibold text-slate-900 dark:text-white">기본 표시</span>
+                  <select
+                    value={item.defaultChildId ?? item.children[0]?.id ?? ''}
+                    onChange={(e) => setDefaultChild(index, e.target.value)}
+                    className="min-w-[180px] rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-xs text-slate-900 focus:border-blue-400 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-slate-100"
+                  >
+                    {item.children.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+
+              {item.children?.length ? (
                 <div className="mt-3 space-y-2">
                   {item.children.map((child, childIndex) => (
                     <div
@@ -279,4 +306,3 @@ export default function MenuEditorPanel({ open, onClose }: MenuEditorPanelProps)
     </div>
   )
 }
-

@@ -9,6 +9,7 @@ export type MenuItem = {
   label: string
   hidden?: boolean
   href?: string
+  defaultChildId?: string
   children?: MenuItem[]
 }
 
@@ -240,4 +241,3 @@ export function useAdminCustomization() {
   if (!ctx) throw new Error('AdminCustomizationProvider가 필요합니다.')
   return ctx
 }
-

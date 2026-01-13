@@ -72,12 +72,9 @@ function safeParse(value: string | null): CustomizationState | null {
     if (!parsed || typeof parsed !== 'object') return null
 
     const editMode = parsed.editMode === true
-    const menus =
-      Array.isArray(parsed.menus) && parsed.menus.length > 0 ? (parsed.menus as MenuItem[]) : defaultMenus
+    const menus = Array.isArray(parsed.menus) && parsed.menus.length > 0 ? (parsed.menus as MenuItem[]) : defaultMenus
     const pages =
-      parsed.pages && typeof parsed.pages === 'object'
-        ? (parsed.pages as Record<string, PageCustomization>)
-        : {}
+      parsed.pages && typeof parsed.pages === 'object' ? (parsed.pages as Record<string, PageCustomization>) : {}
 
     return { editMode, menus, pages }
   } catch {
@@ -123,8 +120,8 @@ export default function AdminCustomizationProvider({ children }: { children: Rea
       const headers = await getClientAuthHeaders()
       if (!headers.Authorization && !headers['x-demo-role']) return
 
-      const res = await fetch('/api/admin/customization', { headers })
-      const json = (await res.json()) as { menus?: unknown; pages?: unknown }
+      const res = await fetch('/api/admin/customization', { headers, cache: 'no-store' })
+      const json = (await res.json().catch(() => ({}))) as { menus?: unknown; pages?: unknown }
       if (!res.ok) return
       if (cancelled) return
 
@@ -135,7 +132,7 @@ export default function AdminCustomizationProvider({ children }: { children: Rea
       const hasMenus = Array.isArray(rawMenus) && rawMenus.length > 0
       const hasPages = rawPages && Object.keys(rawPages).length > 0
 
-      // 서버에 "빈 배열/빈 객체"만 있는 초기 상태면 기본 메뉴를 유지하고, 기본값을 한번 저장합니다.
+      // DB가 비어있으면(초기 상태) 기본 메뉴를 저장해서 UI가 초기화되지 않게 한다.
       if (!hasMenus && !hasPages) {
         setState((prev) => ({ ...prev, menus: prev.menus.length > 0 ? prev.menus : defaultMenus }))
         serverSyncEnabledRef.current = true
@@ -241,3 +238,4 @@ export function useAdminCustomization() {
   if (!ctx) throw new Error('AdminCustomizationProvider가 필요합니다.')
   return ctx
 }
+

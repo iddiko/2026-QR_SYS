@@ -19,7 +19,7 @@ function isTargetRole(value: unknown): value is TargetRole {
 
 function canManage(owner: RoleKey, target: TargetRole) {
   if (owner === 'SUPER') return true
-  if (owner === 'MAIN') return target === 'GUARD' || target === 'RESIDENT'
+  if (owner === 'MAIN') return target === 'SUB' || target === 'GUARD' || target === 'RESIDENT'
   if (owner === 'SUB') return target === 'GUARD' || target === 'RESIDENT'
   return false
 }
@@ -86,19 +86,16 @@ function mergeEffectiveConfig(rows: { owner_role: string; menu_key: string; is_e
 
 export async function GET(request: Request) {
   const requester = await getRequesterRole(request)
-  if (!requester) return json(401, { error: '로그인이 필요합니다.' })
+  if (!requester) return json(401, { error: '인증 정보가 없습니다. 다시 로그인해주세요.' })
 
   const url = new URL(request.url)
   const targetRoleParam = url.searchParams.get('targetRole')
 
-  const targetRole: TargetRole = isTargetRole(targetRoleParam) ? targetRoleParam : ((requester.role as any) ?? 'RESIDENT')
+  const targetRole: TargetRole =
+    (isTargetRole(targetRoleParam) ? targetRoleParam : null) ?? (isTargetRole(requester.role) ? requester.role : 'RESIDENT')
 
   if (targetRoleParam && targetRole !== (requester.role as any)) {
-    if (!canManage(requester.role, targetRole)) return json(403, { error: '권한이 없습니다.' })
-  }
-
-  if (requester.role === 'SUPER') {
-    // SUPER는 메뉴 제약이 없으므로, 기본값(전부 enabled)로 처리: 저장된 값은 필요 시 UI에서만 사용
+    if (!canManage(requester.role, targetRole)) return json(403, { error: '권한이 부족합니다.' })
   }
 
   const admin = getSupabaseAdminClient()
@@ -121,10 +118,10 @@ type PutBody = {
 
 export async function PUT(request: Request) {
   const requester = await getRequesterRole(request)
-  if (!requester) return json(401, { error: '로그인이 필요합니다.' })
+  if (!requester) return json(401, { error: '인증 정보가 없습니다. 다시 로그인해주세요.' })
 
   const ownerRole = requester.role
-  if (ownerRole !== 'SUPER' && ownerRole !== 'MAIN' && ownerRole !== 'SUB') return json(403, { error: '권한이 없습니다.' })
+  if (ownerRole !== 'SUPER' && ownerRole !== 'MAIN' && ownerRole !== 'SUB') return json(403, { error: '권한이 부족합니다.' })
 
   const body = (await request.json().catch(() => ({}))) as PutBody
   const targetRole = body.targetRole
@@ -133,9 +130,9 @@ export async function PUT(request: Request) {
 
   if (!isTargetRole(targetRole)) return json(400, { error: 'targetRole이 올바르지 않습니다.' })
   if (!menuKey) return json(400, { error: 'menuKey가 필요합니다.' })
-  if (typeof enabled !== 'boolean') return json(400, { error: 'enabled(boolean)가 필요합니다.' })
+  if (typeof enabled !== 'boolean') return json(400, { error: 'enabled(boolean)이 필요합니다.' })
 
-  if (!canManage(ownerRole, targetRole)) return json(403, { error: '권한이 없습니다.' })
+  if (!canManage(ownerRole, targetRole)) return json(403, { error: '권한이 부족합니다.' })
 
   const admin = getSupabaseAdminClient()
   const { error } = await admin

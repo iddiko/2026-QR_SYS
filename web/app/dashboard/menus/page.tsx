@@ -37,23 +37,23 @@ type ToggleState = Record<string, Record<TargetRole, boolean>>
 
 function canManage(currentRole: RoleKey, targetRole: TargetRole) {
   if (currentRole === 'SUPER') return true
-  if (currentRole === 'MAIN') return targetRole === 'GUARD' || targetRole === 'RESIDENT'
+  if (currentRole === 'MAIN') return targetRole === 'SUB' || targetRole === 'GUARD' || targetRole === 'RESIDENT'
   if (currentRole === 'SUB') return targetRole === 'GUARD' || targetRole === 'RESIDENT'
   return false
 }
 
 function visibleColumns(currentRole: RoleKey): TargetRole[] {
   if (currentRole === 'SUPER') return ['MAIN', 'SUB', 'GUARD', 'RESIDENT']
-  if (currentRole === 'MAIN') return ['GUARD', 'RESIDENT']
+  if (currentRole === 'MAIN') return ['SUB', 'GUARD', 'RESIDENT']
   if (currentRole === 'SUB') return ['GUARD', 'RESIDENT']
   return []
 }
 
 async function fetchRoleConfig(targetRole: TargetRole) {
   const headers = await getClientAuthHeaders()
-  if (!headers.Authorization && !headers['x-demo-role']) throw new Error('로그인이 필요합니다.')
+  if (!headers.Authorization && !headers['x-demo-role']) throw new Error('인증 정보가 없습니다. 다시 로그인해주세요.')
 
-  const res = await fetch(`/api/menu-config?targetRole=${encodeURIComponent(targetRole)}`, { headers })
+  const res = await fetch(`/api/menu-config?targetRole=${encodeURIComponent(targetRole)}`, { headers, cache: 'no-store' })
   const json = (await res.json().catch(() => ({}))) as { error?: string; config?: Record<string, boolean> }
   if (!res.ok) throw new Error(json.error ?? '메뉴 설정을 불러오지 못했습니다.')
   return json.config ?? {}
@@ -61,7 +61,7 @@ async function fetchRoleConfig(targetRole: TargetRole) {
 
 async function saveRoleConfig(targetRole: TargetRole, menuKey: string, enabled: boolean) {
   const headers = await getClientAuthHeaders()
-  if (!headers.Authorization && !headers['x-demo-role']) throw new Error('로그인이 필요합니다.')
+  if (!headers.Authorization && !headers['x-demo-role']) throw new Error('인증 정보가 없습니다. 다시 로그인해주세요.')
 
   const res = await fetch('/api/menu-config', {
     method: 'PUT',
@@ -89,7 +89,7 @@ export default function RoleMenusPage() {
     setToggles((prev) => {
       const next: ToggleState = { ...prev }
       for (const row of rows) {
-        if (!next[row.key]) next[row.key] = { MAIN: true, SUB: true, GUARD: true, RESIDENT: true }
+        if (!next[row.key]) next[row.key] = { MAIN: false, SUB: false, GUARD: false, RESIDENT: false }
       }
       for (const key of Object.keys(next)) {
         if (!rows.some((r) => r.key === key)) delete next[key]
@@ -103,14 +103,12 @@ export default function RoleMenusPage() {
     setLoadingConfig(true)
     setSaveError(null)
     try {
-      const results = await Promise.all(
-        columns.map(async (targetRole) => ({ targetRole, config: await fetchRoleConfig(targetRole) }))
-      )
+      const results = await Promise.all(columns.map(async (targetRole) => ({ targetRole, config: await fetchRoleConfig(targetRole) })))
 
       setToggles((prev) => {
         const next: ToggleState = { ...prev }
         for (const row of rows) {
-          if (!next[row.key]) next[row.key] = { MAIN: true, SUB: true, GUARD: true, RESIDENT: true }
+          if (!next[row.key]) next[row.key] = { MAIN: false, SUB: false, GUARD: false, RESIDENT: false }
         }
 
         for (const r of results) {
@@ -132,18 +130,18 @@ export default function RoleMenusPage() {
     void loadConfigs()
   }, [loadConfigs])
 
-  const setToggle = async (menuKey: string, target: TargetRole, next: boolean) => {
+  const setToggle = async (menuKey: string, target: TargetRole, nextValue: boolean) => {
     setSaveError(null)
     setToggles((prev) => ({
       ...prev,
       [menuKey]: {
-        ...(prev[menuKey] ?? { MAIN: true, SUB: true, GUARD: true, RESIDENT: true }),
-        [target]: next,
+        ...(prev[menuKey] ?? { MAIN: false, SUB: false, GUARD: false, RESIDENT: false }),
+        [target]: nextValue,
       },
     }))
 
     try {
-      await saveRoleConfig(target, menuKey, next)
+      await saveRoleConfig(target, menuKey, nextValue)
     } catch (e: any) {
       setSaveError(e?.message ?? '저장에 실패했습니다.')
     }
@@ -156,8 +154,7 @@ export default function RoleMenusPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-blue-600 dark:text-sky-300">권한</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">권한별 메뉴 관리</h2>
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-            가로: 메인 관리자 / 서브 관리자 / 경비 / 입주민 · 세로: 모든 메뉴(대분류/하위메뉴 포함). 각 셀에서 ON/OFF로 표시 여부를
-            관리합니다.
+            가로: {columns.map((c) => roleLabels[c]).join(' / ') || '—'} · 세로: 모든 메뉴(대분류/하위메뉴 포함) · 각 셀에서 ON/OFF로 표시 여부를 관리합니다.
           </p>
         </div>
         <PageEditButton routeKey={routeKey} />
@@ -169,14 +166,15 @@ export default function RoleMenusPage() {
         <p className="font-semibold text-slate-900 dark:text-white">규칙</p>
         <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600 dark:text-slate-400">
           <li>최고관리자(SUPER)는 모든 메뉴/데이터 제약이 없습니다.</li>
-          <li>메인/서브 관리자는 경비·입주민 메뉴만 ON/OFF 할 수 있습니다.</li>
-          <li>같은 레벨(메인↔메인, 서브↔서브)은 서로의 메뉴를 볼 수도/조절할 수도 없습니다.</li>
+          <li>메인 관리자는 서브/경비/입주민 메뉴를 ON/OFF 할 수 있습니다.</li>
+          <li>서브 관리자는 경비/입주민 메뉴만 ON/OFF 할 수 있습니다.</li>
+          <li>같은 레벨끼리는 서로의 메뉴를 볼 수도, 조정할 수도 없습니다.</li>
         </ul>
       </div>
 
       {loadingConfig ? (
         <div className="rounded-2xl border border-slate-200/80 bg-white/60 p-4 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
-          메뉴 설정을 불러오는 중...
+          메뉴 설정을 불러오는 중…
         </div>
       ) : null}
 
@@ -188,7 +186,7 @@ export default function RoleMenusPage() {
 
       {columns.length === 0 ? (
         <div className="rounded-2xl border border-slate-200/80 bg-white/60 p-4 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
-          현재 권한에서는 메뉴 ON/OFF를 조절할 수 없습니다.
+          현재 계정은 이 페이지에서 메뉴 ON/OFF를 관리할 수 없습니다.
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-slate-200/80 dark:border-white/10">
@@ -218,18 +216,18 @@ export default function RoleMenusPage() {
                       } ${row.hidden ? 'opacity-60' : ''}`}
                       style={{ paddingLeft: `${row.depth * 14}px` }}
                     >
-                      {row.depth > 0 && <span className="mr-1 text-slate-300 dark:text-slate-600">└</span>}
+                      {row.depth > 0 ? <span className="mr-1 text-slate-300 dark:text-slate-600">└</span> : null}
                       {row.label}
-                      {row.hidden && (
+                      {row.hidden ? (
                         <span className="rounded-full border border-slate-200/70 bg-white px-2 py-0.5 text-[10px] text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                           숨김
                         </span>
-                      )}
+                      ) : null}
                     </span>
                   </td>
                   {columns.map((targetRole) => {
                     const allowed = canManage(currentRole, targetRole)
-                    const value = toggles[row.key]?.[targetRole] ?? true
+                    const value = toggles[row.key]?.[targetRole] ?? false
                     return (
                       <td key={`${row.key}:${targetRole}`} className="px-4 py-3">
                         <button

@@ -17,7 +17,7 @@ type DashboardSidebarProps = {
 type NavItem = { id: string; href: string; label: string }
 type NavGroup = { id: string; label: string; defaultChildId?: string; children: NavItem[] }
 
-const fallbackFlatItems = [
+const fallbackFlatItems: NavItem[] = [
   { id: 'dashboard', href: '/dashboard', label: '대시보드' },
   { id: 'menus', href: '/dashboard/menus', label: '권한별 메뉴 관리' },
   { id: 'gas', href: '/dashboard/gas', label: '가스검침' },
@@ -25,13 +25,13 @@ const fallbackFlatItems = [
   { id: 'settings', href: '/dashboard/settings', label: '설정' },
 ]
 
-const fallbackManagementItems = [
+const fallbackManagementItems: NavItem[] = [
   { id: 'complexes', href: '/dashboard/complexes', label: '단지 관리' },
   { id: 'buildings', href: '/dashboard/buildings', label: '동 관리' },
   { id: 'resident-qr', href: '/dashboard/resident-qr', label: '입주민/QR 관리' },
 ]
 
-const fallbackGroupItems = [
+const fallbackGroupItems: NavGroup[] = [
   {
     id: 'ads',
     label: '소식/광고 관리',
@@ -74,8 +74,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
   const managementItems =
     managementMenu?.children
       ?.filter((c) => !c.hidden && c.href)
-      .map((c) => ({ id: c.id, href: c.href as string, label: c.label })) ??
-    fallbackManagementItems
+      .map((c) => ({ id: c.id, href: c.href as string, label: c.label })) ?? fallbackManagementItems
 
   const groupsFromState: NavGroup[] = rawMenus
     .filter((m) => m.id !== 'management')
@@ -95,13 +94,14 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
     (menuKey: string) => {
       if (isSuper) return true
       const v = menuConfig[menuKey]
-      return v === undefined ? true : Boolean(v)
+      return v === undefined ? false : Boolean(v)
     },
     [isSuper, menuConfig]
   )
 
-  const managementItemsConfigured =
-    (managementItems as NavItem[]).filter((i) => applyConfig(i.id)) ?? ([] as NavItem[])
+  const managementEnabled = isSuper ? true : applyConfig('management')
+
+  const managementItemsConfigured = (managementItems as NavItem[]).filter((i) => applyConfig(i.id)) ?? ([] as NavItem[])
   const groupsConfigured: NavGroup[] = groupsFromState
     .filter((g) => applyConfig(g.id))
     .map((g) => ({ ...g, children: g.children.filter((c) => applyConfig(c.id)) }))
@@ -119,13 +119,11 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
   const effectiveGroups = groupsConfigured.length ? groupsConfigured : fallbackGroupItems
   const effectiveFlatItems = flatItemsConfigured.length ? flatItemsConfigured : fallbackFlatItems
 
-  const dashboardItem =
-    effectiveFlatItems.find((i) => i.href === '/dashboard') ??
-    ({ id: 'dashboard', href: '/dashboard', label: '대시보드' } as const)
+  const dashboardItem = effectiveFlatItems.find((i) => i.href === '/dashboard') ?? (isSuper ? fallbackFlatItems[0] : null)
   const otherFlatItems = effectiveFlatItems.filter((i) => i.href !== '/dashboard')
 
   const isActiveManagement = managementItemsConfigured.some((item) => pathname === item.href)
-  const [openGroupId, setOpenGroupId] = React.useState<string | null>('management')
+  const [openGroupId, setOpenGroupId] = React.useState<string | null>(managementEnabled ? 'management' : null)
 
   React.useEffect(() => {
     if (isActiveManagement) {
@@ -140,18 +138,15 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
     setOpenGroupId((prev) => (prev === groupId ? null : groupId))
   }
 
-  const pickDefaultHref = React.useCallback(
-    (group: { defaultChildId?: string; children: NavItem[] }) => {
-      const children = group.children ?? []
-      if (children.length === 0) return null
-      if (group.defaultChildId) {
-        const match = children.find((c) => c.id === group.defaultChildId)
-        if (match) return match.href
-      }
-      return children[0].href
-    },
-    []
-  )
+  const pickDefaultHref = React.useCallback((group: { defaultChildId?: string; children: NavItem[] }) => {
+    const children = group.children ?? []
+    if (children.length === 0) return null
+    if (group.defaultChildId) {
+      const match = children.find((c) => c.id === group.defaultChildId)
+      if (match) return match.href
+    }
+    return children[0].href
+  }, [])
 
   const goToDefaultChild = (group: { defaultChildId?: string; children: NavItem[] }) => {
     const defaultHref = pickDefaultHref(group)
@@ -172,45 +167,49 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
           <p className="mt-2 truncate text-sm text-slate-500 dark:text-slate-400">{complexLabel}</p>
         ) : null}
 
-        {roleLabel && (
+        {roleLabel ? (
           <div className="mt-3 inline-flex rounded-full border border-blue-500/25 bg-blue-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.4em] text-blue-700 dark:text-sky-300">
             {roleLabel}
           </div>
-        )}
+        ) : null}
       </div>
 
       <nav className="mt-6 space-y-2">
-        <Link
-          href={dashboardItem.href}
-          className={`block rounded-2xl border px-4 py-3 text-sm transition ${
-            isActiveHref(dashboardItem.href)
-              ? 'border-blue-500/30 bg-blue-500/10 text-slate-950 dark:text-white'
-              : 'border-slate-200/70 bg-transparent text-slate-800 hover:border-blue-500/20 hover:bg-white/50 dark:border-white/5 dark:text-slate-200 dark:hover:bg-white/5'
-          }`}
-        >
-          <span className="font-semibold">{dashboardItem.label}</span>
-        </Link>
+        {dashboardItem ? (
+          <Link
+            href={dashboardItem.href}
+            className={`block rounded-2xl border px-4 py-3 text-sm transition ${
+              isActiveHref(dashboardItem.href)
+                ? 'border-blue-500/30 bg-blue-500/10 text-slate-950 dark:text-white'
+                : 'border-slate-200/70 bg-transparent text-slate-800 hover:border-blue-500/20 hover:bg-white/50 dark:border-white/5 dark:text-slate-200 dark:hover:bg-white/5'
+            }`}
+          >
+            <span className="font-semibold">{dashboardItem.label}</span>
+          </Link>
+        ) : null}
 
-        <button
-          type="button"
-          onClick={() => {
-            toggleGroup('management')
-            goToDefaultChild({
-              defaultChildId: managementMenu?.defaultChildId,
-              children: managementItemsConfigured as NavItem[],
-            })
-          }}
-          className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm transition ${
-            isActiveManagement
-              ? 'border-blue-500/30 bg-blue-500/10 text-slate-950 dark:text-white'
-              : 'border-slate-200/70 bg-transparent text-slate-800 hover:border-blue-500/20 hover:bg-white/50 dark:border-white/5 dark:text-slate-200 dark:hover:bg-white/5'
-          }`}
-        >
-          <span className="font-semibold">{managementLabel}</span>
-          <Chevron open={openGroupId === 'management'} />
-        </button>
+        {managementEnabled && managementItemsConfigured.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => {
+              toggleGroup('management')
+              goToDefaultChild({
+                defaultChildId: managementMenu?.defaultChildId,
+                children: managementItemsConfigured as NavItem[],
+              })
+            }}
+            className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm transition ${
+              isActiveManagement
+                ? 'border-blue-500/30 bg-blue-500/10 text-slate-950 dark:text-white'
+                : 'border-slate-200/70 bg-transparent text-slate-800 hover:border-blue-500/20 hover:bg-white/50 dark:border-white/5 dark:text-slate-200 dark:hover:bg-white/5'
+            }`}
+          >
+            <span className="font-semibold">{managementLabel}</span>
+            <Chevron open={openGroupId === 'management'} />
+          </button>
+        ) : null}
 
-        {openGroupId === 'management' && (
+        {managementEnabled && managementItemsConfigured.length > 0 && openGroupId === 'management' ? (
           <div className="space-y-2 pl-3">
             {managementItemsConfigured.map((item) => {
               const isActive = isActiveHref(item.href as string)
@@ -229,7 +228,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
               )
             })}
           </div>
-        )}
+        ) : null}
 
         {effectiveGroups.map((group) => {
           const isOpen = openGroupId === group.id
@@ -252,7 +251,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
                 <Chevron open={isOpen} />
               </button>
 
-              {isOpen && (
+              {isOpen ? (
                 <div className="space-y-2 pl-3">
                   {group.children.map((item) => {
                     const isActive = isActiveHref(item.href)
@@ -271,7 +270,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
                     )
                   })}
                 </div>
-              )}
+              ) : null}
             </div>
           )
         })}
@@ -296,3 +295,4 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
     </aside>
   )
 }
+

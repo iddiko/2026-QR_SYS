@@ -19,7 +19,7 @@ export default function LoginCard({ form, onChange, onSubmit, status, message }:
     <div className="mx-auto w-full max-w-md rounded-3xl border border-white/10 bg-white/90 p-8 shadow-[0_15px_35px_rgba(2,6,23,0.08)] backdrop-blur dark:bg-slate-950/60 dark:shadow-[0_15px_35px_rgba(2,6,23,0.9)]">
       <h2 className="text-xl font-semibold text-slate-950 dark:text-white">로그인</h2>
       <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-        회원가입은 받지 않습니다. 메인/서브 관리자가 보낸 초대 메일로만 계정이 생성됩니다.
+        회원가입은 받지 않습니다. 메인/서브 관리자가 초대(이메일)한 계정만 로그인할 수 있습니다.
       </p>
 
       <form className="mt-6 space-y-4" onSubmit={(event) => event.preventDefault()}>
@@ -63,16 +63,16 @@ export default function LoginCard({ form, onChange, onSubmit, status, message }:
               : 'cursor-not-allowed bg-slate-100 text-slate-400 dark:bg-white/10 dark:text-slate-500'
           }`}
         >
-          {status === 'loading' ? '로그인 중...' : '로그인'}
+          {status === 'loading' ? '로그인 중…' : '로그인'}
         </button>
       </form>
 
-      {message && (
+      {message ? (
         <p className={`mt-4 text-xs ${status === 'error' ? 'text-rose-600' : 'text-emerald-600'}`}>{message}</p>
-      )}
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-        로그인 후 역할에 따라 대시보드/메뉴가 자동으로 구성됩니다.
-      </p>
+      ) : null}
+
+      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">로그인 후 권한에 따라 대시보드/메뉴가 자동 구성됩니다.</p>
     </div>
   )
 }
+

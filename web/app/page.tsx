@@ -1,7 +1,6 @@
 "use client"
 
 import React from 'react'
-import { useRouter } from 'next/navigation'
 import supabase from '../lib/supabaseClient'
 import Footer from '../components/layout/Footer'
 import Header from '../components/layout/Header'
@@ -16,7 +15,6 @@ type FormState = {
 }
 
 export default function Home() {
-  const router = useRouter()
   const [isReady, setIsReady] = React.useState(false)
   const [form, setForm] = React.useState<FormState>({ email: '', password: '' })
   const [status, setStatus] = React.useState<'idle' | 'loading' | 'success' | 'error'>('idle')
@@ -25,6 +23,20 @@ export default function Home() {
   React.useEffect(() => {
     const timer = setTimeout(() => setIsReady(true), splashDurationMs)
     return () => clearTimeout(timer)
+  }, [])
+
+  React.useEffect(() => {
+    let cancelled = false
+    async function autoRedirectIfLoggedIn() {
+      const { data } = await supabase.auth.getSession()
+      if (!cancelled && data.session) {
+        window.location.replace('/dashboard')
+      }
+    }
+    void autoRedirectIfLoggedIn()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -37,7 +49,7 @@ export default function Home() {
     setStatus('loading')
     setMessage('')
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: form.email,
       password: form.password,
     })
@@ -48,9 +60,17 @@ export default function Home() {
       return
     }
 
+    if (!data.session) {
+      setStatus('error')
+      setMessage('로그인 세션을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.')
+      return
+    }
+
     setStatus('success')
     setMessage('로그인 성공! 대시보드로 이동합니다.')
-    router.replace('/dashboard')
+
+    await supabase.auth.getSession()
+    window.location.assign('/dashboard')
   }
 
   const handleDevLogin = () => {
@@ -67,7 +87,7 @@ export default function Home() {
     )
     setStatus('success')
     setMessage('개발용(더미) 로그인으로 대시보드로 이동합니다.')
-    router.replace('/dashboard')
+    window.location.assign('/dashboard')
   }
 
   return (
@@ -80,7 +100,7 @@ export default function Home() {
         <div className="text-center">
           <p className="text-xs font-semibold uppercase tracking-[0.5em] text-blue-600 dark:text-sky-300">PARKING QR HUB</p>
           <h1 className="mt-4 text-5xl font-black tracking-[0.2em]">QR PARKING SYS</h1>
-          <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">로딩 중...</p>
+          <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">로딩 중…</p>
         </div>
       </div>
 
@@ -100,7 +120,7 @@ export default function Home() {
                 개발용(더미) 로그인
               </button>
               <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                Supabase 계정 생성이 막혀 있을 때도 UI/흐름을 확인할 수 있도록 제공되는 개발 모드 기능입니다. (프로덕션에서는 숨겨집니다)
+                Supabase 계정 생성이 막혀 있을 때 UI 흐름을 확인할 수 있도록 제공되는 개발 모드 기능입니다. (프로덕션에서는 숨김)
               </p>
             </div>
           )}
@@ -111,3 +131,4 @@ export default function Home() {
     </>
   )
 }
+

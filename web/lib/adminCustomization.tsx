@@ -1,6 +1,8 @@
 "use client"
 
 import React from 'react'
+import useAppSession from './authSession'
+import { getClientAuthHeaders } from './clientAuth'
 
 export type MenuItem = {
   id: string
@@ -30,7 +32,7 @@ type AdminCustomizationContextValue = {
 
 const AdminCustomizationContext = React.createContext<AdminCustomizationContextValue | null>(null)
 
-const STORAGE_KEY = 'qr_sys_admin_customization_v2'
+const STORAGE_KEY = 'qr_sys_admin_customization_v3'
 
 const defaultMenus: MenuItem[] = [
   { id: 'dashboard', label: '대시보드', href: '/dashboard' },
@@ -78,17 +80,94 @@ function safeParse(value: string | null): CustomizationState | null {
   }
 }
 
-export default function AdminCustomizationProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = React.useState<CustomizationState>(getDefaultState)
-
+function useDebouncedEffect(effect: () => void | (() => void), deps: React.DependencyList, delayMs: number) {
   React.useEffect(() => {
+    const id = window.setTimeout(() => {
+      const cleanup = effect()
+      if (typeof cleanup === 'function') cleanup()
+    }, delayMs)
+    return () => window.clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps)
+}
+
+export default function AdminCustomizationProvider({ children }: { children: React.ReactNode }) {
+  const { session } = useAppSession()
+  const isSuper = session?.role === 'SUPER'
+
+  const [state, setState] = React.useState<CustomizationState>(() => {
+    if (typeof window === 'undefined') return getDefaultState()
+    return safeParse(localStorage.getItem(STORAGE_KEY)) ?? getDefaultState()
+  })
+
+  const serverSyncEnabledRef = React.useRef(false)
+  const hydratedRef = React.useRef(false)
+
+  // Load from localStorage (once)
+  React.useEffect(() => {
+    if (hydratedRef.current) return
+    hydratedRef.current = true
     const stored = safeParse(localStorage.getItem(STORAGE_KEY))
     if (stored) setState(stored)
   }, [])
 
+  // If SUPER, also load from DB (global)
+  React.useEffect(() => {
+    if (!isSuper) return
+    let cancelled = false
+
+    async function loadFromDb() {
+      const headers = await getClientAuthHeaders()
+      if (!headers.Authorization && !headers['x-demo-role']) return
+
+      const res = await fetch('/api/admin/customization', { headers })
+      const json = (await res.json()) as { menus?: unknown; pages?: unknown }
+      if (!res.ok) return
+
+      if (cancelled) return
+      const menus = Array.isArray(json.menus) ? (json.menus as MenuItem[]) : undefined
+      const pages = json.pages && typeof json.pages === 'object' ? (json.pages as Record<string, PageCustomization>) : undefined
+      if (!menus && !pages) return
+
+      setState((prev) => ({
+        ...prev,
+        menus: menus ?? prev.menus,
+        pages: pages ?? prev.pages,
+      }))
+      serverSyncEnabledRef.current = true
+    }
+
+    void loadFromDb()
+    return () => {
+      cancelled = true
+    }
+  }, [isSuper])
+
+  // Always keep localStorage updated (cache)
   React.useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   }, [state])
+
+  // Persist menus/pages to DB (SUPER only), debounced
+  useDebouncedEffect(
+    () => {
+      if (!isSuper) return
+      if (!serverSyncEnabledRef.current) return
+
+      void (async () => {
+        const headers = await getClientAuthHeaders()
+        if (!headers.Authorization && !headers['x-demo-role']) return
+
+        await fetch('/api/admin/customization', {
+          method: 'PUT',
+          headers: { ...headers, 'content-type': 'application/json' },
+          body: JSON.stringify({ menus: state.menus, pages: state.pages }),
+        })
+      })()
+    },
+    [isSuper, state.menus, state.pages],
+    600
+  )
 
   const setEditMode = React.useCallback((value: boolean) => {
     setState((prev) => ({ ...prev, editMode: value }))
@@ -118,7 +197,18 @@ export default function AdminCustomizationProvider({ children }: { children: Rea
   const resetAll = React.useCallback(() => {
     setState(getDefaultState())
     localStorage.removeItem(STORAGE_KEY)
-  }, [])
+    if (isSuper) {
+      void (async () => {
+        const headers = await getClientAuthHeaders()
+        if (!headers.Authorization && !headers['x-demo-role']) return
+        await fetch('/api/admin/customization', {
+          method: 'PUT',
+          headers: { ...headers, 'content-type': 'application/json' },
+          body: JSON.stringify({ menus: defaultMenus, pages: {} }),
+        })
+      })()
+    }
+  }, [isSuper])
 
   const value = React.useMemo<AdminCustomizationContextValue>(
     () => ({ state, setEditMode, toggleEditMode, setMenus, setPageCustomization, resetAll }),
@@ -133,3 +223,4 @@ export function useAdminCustomization() {
   if (!ctx) throw new Error('AdminCustomizationProvider가 필요합니다.')
   return ctx
 }
+

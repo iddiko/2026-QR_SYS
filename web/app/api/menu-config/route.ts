@@ -32,6 +32,16 @@ function ownerPrecedence(role: string) {
   return 99
 }
 
+function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number) {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error('timeout')), timeoutMs)
+  })
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId)
+  }) as Promise<T>
+}
+
 async function getRequesterRole(request: Request): Promise<{ role: RoleKey; userId: string | null } | null> {
   const auth = request.headers.get('authorization')
   const token = auth?.startsWith('Bearer ') ? auth.slice('Bearer '.length) : null
@@ -44,7 +54,7 @@ async function getRequesterRole(request: Request): Promise<{ role: RoleKey; user
   }
 
   const anon = getSupabaseAnonClient()
-  const { data, error } = await anon.auth.getUser(token)
+  const { data, error } = await withTimeout(anon.auth.getUser(token), 8000)
   if (error || !data.user) return null
 
   const email = (data.user.email ?? '').toLowerCase()
@@ -105,10 +115,10 @@ export async function GET(request: Request) {
 
   try {
     const admin = getSupabaseAdminClient()
-    const { data, error } = await admin
-      .from('menu_configurations')
-      .select('owner_role, target_role, menu_key, is_enabled')
-      .eq('target_role', targetRole)
+    const { data, error } = await withTimeout(
+      admin.from('menu_configurations').select('owner_role, target_role, menu_key, is_enabled').eq('target_role', targetRole),
+      8000
+    )
 
     if (error) return json(500, { error: error.message })
 
@@ -150,18 +160,21 @@ export async function PUT(request: Request) {
 
   try {
     const admin = getSupabaseAdminClient()
-    const { error } = await admin
-      .from('menu_configurations')
-      .upsert(
-        {
-          owner_role: ownerRole as OwnerRole,
-          target_role: targetRole,
-          menu_key: menuKey,
-          is_enabled: enabled,
-          updated_by: requester.userId,
-        },
-        { onConflict: 'owner_role,target_role,menu_key' }
-      )
+    const { error } = await withTimeout(
+      admin
+        .from('menu_configurations')
+        .upsert(
+          {
+            owner_role: ownerRole as OwnerRole,
+            target_role: targetRole,
+            menu_key: menuKey,
+            is_enabled: enabled,
+            updated_by: requester.userId,
+          },
+          { onConflict: 'owner_role,target_role,menu_key' }
+        ),
+      8000
+    )
 
     if (error) return json(500, { error: error.message })
 

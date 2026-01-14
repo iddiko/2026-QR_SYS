@@ -49,27 +49,55 @@ function visibleColumns(currentRole: RoleKey): TargetRole[] {
   return []
 }
 
+async function fetchJsonWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController()
+  const id = window.setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(input, { ...init, signal: controller.signal })
+    const json = (await res.json().catch(() => ({}))) as any
+    return { res, json }
+  } finally {
+    window.clearTimeout(id)
+  }
+}
+
 async function fetchRoleConfig(targetRole: TargetRole) {
   const headers = await getClientAuthHeaders()
   if (!headers.Authorization && !headers['x-demo-role']) throw new Error('인증 정보가 없습니다. 다시 로그인해주세요.')
 
-  const res = await fetch(`/api/menu-config?targetRole=${encodeURIComponent(targetRole)}`, { headers, cache: 'no-store' })
-  const json = (await res.json().catch(() => ({}))) as { error?: string; config?: Record<string, boolean> }
-  if (!res.ok) throw new Error(json.error ?? '메뉴 설정을 불러오지 못했습니다.')
-  return json.config ?? {}
+  try {
+    const { res, json } = await fetchJsonWithTimeout(
+      `/api/menu-config?targetRole=${encodeURIComponent(targetRole)}`,
+      { headers, cache: 'no-store' },
+      8000
+    )
+    if (!res.ok) throw new Error((json?.error as string) ?? '메뉴 설정을 불러오지 못했습니다.')
+    return (json?.config as Record<string, boolean> | undefined) ?? {}
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw new Error('메뉴 설정 요청이 지연됩니다. 잠시 후 다시 시도해주세요.')
+    throw e
+  }
 }
 
 async function saveRoleConfig(targetRole: TargetRole, menuKey: string, enabled: boolean) {
   const headers = await getClientAuthHeaders()
   if (!headers.Authorization && !headers['x-demo-role']) throw new Error('인증 정보가 없습니다. 다시 로그인해주세요.')
 
-  const res = await fetch('/api/menu-config', {
-    method: 'PUT',
-    headers: { ...headers, 'content-type': 'application/json' },
-    body: JSON.stringify({ targetRole, menuKey, enabled }),
-  })
-  const json = (await res.json().catch(() => ({}))) as { error?: string }
-  if (!res.ok) throw new Error(json.error ?? '저장에 실패했습니다.')
+  try {
+    const { res, json } = await fetchJsonWithTimeout(
+      '/api/menu-config',
+      {
+        method: 'PUT',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ targetRole, menuKey, enabled }),
+      },
+      8000
+    )
+    if (!res.ok) throw new Error((json?.error as string) ?? '저장에 실패했습니다.')
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw new Error('저장 요청이 지연됩니다. 잠시 후 다시 시도해주세요.')
+    throw e
+  }
 
   // 즉시 반영(같은 브라우저 탭/창 간): 대상 역할(targetRole) 사이드바가 바로 업데이트되도록 브로드캐스트
   if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {

@@ -63,42 +63,38 @@ async function fetchJsonWithTimeout(input: RequestInfo | URL, init: RequestInit,
 
 async function fetchRoleConfig(targetRole: TargetRole) {
   const headers = await getClientAuthHeaders()
-  if (!headers.Authorization && !headers['x-demo-role']) throw new Error('인증 정보가 없습니다. 다시 로그인해주세요.')
+  if (!headers.Authorization && !headers['x-demo-role']) throw new Error('로그인이 필요합니다. 다시 로그인해주세요.')
 
-  try {
-    const { res, json } = await fetchJsonWithTimeout(
-      `/api/menu-config?targetRole=${encodeURIComponent(targetRole)}`,
-      { headers, cache: 'no-store' },
-      8000
-    )
-    if (!res.ok) throw new Error((json?.error as string) ?? '메뉴 설정을 불러오지 못했습니다.')
-    return (json?.config as Record<string, boolean> | undefined) ?? {}
-  } catch (e: any) {
-    if (e?.name === 'AbortError') throw new Error('메뉴 설정 요청이 지연됩니다. 잠시 후 다시 시도해주세요.')
-    throw e
-  }
+  const { res, json } = await fetchJsonWithTimeout(
+    `/api/menu-config?targetRole=${encodeURIComponent(targetRole)}`,
+    { headers, cache: 'no-store' },
+    8000
+  )
+  if (!res.ok) throw new Error((json?.error as string) ?? '메뉴 설정을 불러오지 못했습니다.')
+  return (json?.config as Record<string, boolean> | undefined) ?? {}
 }
 
 async function saveRoleConfig(targetRole: TargetRole, menuKey: string, enabled: boolean) {
   const headers = await getClientAuthHeaders()
-  if (!headers.Authorization && !headers['x-demo-role']) throw new Error('인증 정보가 없습니다. 다시 로그인해주세요.')
+  if (!headers.Authorization && !headers['x-demo-role']) throw new Error('로그인이 필요합니다. 다시 로그인해주세요.')
 
-  try {
-    const { res, json } = await fetchJsonWithTimeout(
-      '/api/menu-config',
-      {
-        method: 'PUT',
-        headers: { ...headers, 'content-type': 'application/json' },
-        body: JSON.stringify({ targetRole, menuKey, enabled }),
-      },
-      8000
-    )
-    if (!res.ok) throw new Error((json?.error as string) ?? '저장에 실패했습니다.')
-  } catch (e: any) {
-    if (e?.name === 'AbortError') throw new Error('저장 요청이 지연됩니다. 잠시 후 다시 시도해주세요.')
-    throw e
-  }
+  const { res, json } = await fetchJsonWithTimeout(
+    '/api/menu-config',
+    {
+      method: 'PUT',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ targetRole, menuKey, enabled }),
+    },
+    8000
+  )
+  if (!res.ok) throw new Error((json?.error as string) ?? '저장에 실패했습니다.')
 }
+
+type SaveStatus =
+  | { kind: 'idle' }
+  | { kind: 'saving' }
+  | { kind: 'saved'; message: string }
+  | { kind: 'error'; message: string }
 
 export default function RoleMenusPage() {
   const { session } = useAppSession()
@@ -112,8 +108,8 @@ export default function RoleMenusPage() {
   const [toggles, setToggles] = React.useState<ToggleState>(() => ({}))
   const [baseline, setBaseline] = React.useState<ToggleState>(() => ({}))
   const [loadingConfig, setLoadingConfig] = React.useState(false)
-  const [saveError, setSaveError] = React.useState<string | null>(null)
   const [saving, setSaving] = React.useState(false)
+  const [status, setStatus] = React.useState<SaveStatus>({ kind: 'idle' })
 
   React.useEffect(() => {
     setToggles((prev) => {
@@ -142,9 +138,12 @@ export default function RoleMenusPage() {
   const loadConfigs = React.useCallback(async () => {
     if (columns.length === 0) return
     setLoadingConfig(true)
-    setSaveError(null)
+    setStatus({ kind: 'idle' })
+
     try {
-      const results = await Promise.all(columns.map(async (targetRole) => ({ targetRole, config: await fetchRoleConfig(targetRole) })))
+      const results = await Promise.all(
+        columns.map(async (targetRole) => ({ targetRole, config: await fetchRoleConfig(targetRole) }))
+      )
 
       const nextState: ToggleState = {}
       for (const row of rows) nextState[row.key] = { MAIN: false, SUB: false, GUARD: false, RESIDENT: false }
@@ -158,7 +157,8 @@ export default function RoleMenusPage() {
       setToggles(nextState)
       setBaseline(nextState)
     } catch (e: any) {
-      setSaveError(e?.message ?? '메뉴 설정을 불러오지 못했습니다.')
+      console.error(e)
+      setStatus({ kind: 'error', message: '메뉴 설정을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.' })
     } finally {
       setLoadingConfig(false)
     }
@@ -168,8 +168,14 @@ export default function RoleMenusPage() {
     void loadConfigs()
   }, [loadConfigs])
 
+  React.useEffect(() => {
+    if (status.kind !== 'saved') return
+    const id = window.setTimeout(() => setStatus({ kind: 'idle' }), 2000)
+    return () => window.clearTimeout(id)
+  }, [status.kind])
+
   const setToggle = (menuKey: string, target: TargetRole, nextValue: boolean) => {
-    setSaveError(null)
+    setStatus({ kind: 'idle' })
     setToggles((prev) => ({
       ...prev,
       [menuKey]: {
@@ -193,8 +199,11 @@ export default function RoleMenusPage() {
 
   const saveAll = async () => {
     if (saving) return
-    setSaveError(null)
+    if (dirtyCount === 0) return
+
     setSaving(true)
+    setStatus({ kind: 'saving' })
+
     try {
       for (const menuKey of Object.keys(toggles)) {
         for (const targetRole of columns) {
@@ -202,18 +211,13 @@ export default function RoleMenusPage() {
           const prevValue = baseline[menuKey]?.[targetRole] ?? false
           if (nextValue === prevValue) continue
           await saveRoleConfig(targetRole, menuKey, nextValue)
-
-          // 저장된 값만 즉시 반영(같은 브라우저 탭/창 간)
-          if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-            const ch = new BroadcastChannel('qr_sys_menu_config')
-            ch.postMessage({ type: 'menu-config-updated', targetRole, menuKey, enabled: nextValue })
-            ch.close()
-          }
         }
       }
       setBaseline(toggles)
+      setStatus({ kind: 'saved', message: '저장 완료' })
     } catch (e: any) {
-      setSaveError(e?.message ?? '저장에 실패했습니다.')
+      console.error(e)
+      setStatus({ kind: 'error', message: '저장에 실패했습니다. 잠시 후 다시 시도해주세요.' })
     } finally {
       setSaving(false)
     }
@@ -226,7 +230,8 @@ export default function RoleMenusPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-blue-600 dark:text-sky-300">권한</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">권한별 메뉴 관리</h2>
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-            가로: {columns.map((c) => roleLabels[c]).join(' / ') || '—'} · 세로: 모든 메뉴(대분류/하위메뉴 포함) · 각 셀에서 ON/OFF로 표시 여부를 관리합니다.
+            가로: {columns.map((c) => roleLabels[c]).join(' / ') || '없음'} · 세로: 모든 메뉴(대분류/하위메뉴 포함) · 각 셀에서 ON/OFF를
+            변경한 뒤 저장 버튼으로 반영합니다.
           </p>
         </div>
         <PageEditButton routeKey={routeKey} />
@@ -235,8 +240,13 @@ export default function RoleMenusPage() {
       <EditablePageNote routeKey={routeKey} />
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/60 p-4 text-sm text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
-        <div className="text-xs text-slate-600 dark:text-slate-400">
-          변경사항: <span className="font-semibold text-slate-900 dark:text-white">{dirtyCount}</span>건
+        <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+          <div>
+            변경사항: <span className="font-semibold text-slate-900 dark:text-white">{dirtyCount}</span>건
+          </div>
+          {status.kind === 'saving' ? <div className="text-slate-500">저장 중…</div> : null}
+          {status.kind === 'saved' ? <div className="text-emerald-700 dark:text-emerald-300">{status.message}</div> : null}
+          {status.kind === 'error' ? <div className="text-rose-700 dark:text-rose-300">{status.message}</div> : null}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -249,7 +259,10 @@ export default function RoleMenusPage() {
           </button>
           <button
             type="button"
-            onClick={() => setToggles(baseline)}
+            onClick={() => {
+              setStatus({ kind: 'idle' })
+              setToggles(baseline)
+            }}
             disabled={dirtyCount === 0 || saving}
             className="rounded-full border border-slate-200/70 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
           >
@@ -261,7 +274,7 @@ export default function RoleMenusPage() {
             disabled={dirtyCount === 0 || saving}
             className="rounded-full bg-blue-600 px-5 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {saving ? '저장 중…' : '저장'}
+            저장
           </button>
         </div>
       </div>
@@ -270,9 +283,9 @@ export default function RoleMenusPage() {
         <p className="font-semibold text-slate-900 dark:text-white">규칙</p>
         <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600 dark:text-slate-400">
           <li>최고관리자(SUPER)는 모든 메뉴/데이터 제약이 없습니다.</li>
-          <li>메인 관리자는 서브/경비/입주민 메뉴를 ON/OFF 할 수 있습니다.</li>
+          <li>메인 관리자는 서브/경비/입주민 메뉴만 ON/OFF 할 수 있습니다.</li>
           <li>서브 관리자는 경비/입주민 메뉴만 ON/OFF 할 수 있습니다.</li>
-          <li>같은 레벨끼리는 서로의 메뉴를 볼 수도, 조정할 수도 없습니다.</li>
+          <li>같은 레벨끼리는 서로의 메뉴를 볼 수도, 조절할 수도 없습니다.</li>
         </ul>
       </div>
 
@@ -282,15 +295,9 @@ export default function RoleMenusPage() {
         </div>
       ) : null}
 
-      {saveError ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
-          {saveError}
-        </div>
-      ) : null}
-
       {columns.length === 0 ? (
         <div className="rounded-2xl border border-slate-200/80 bg-white/60 p-4 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
-          현재 계정은 이 페이지에서 메뉴 ON/OFF를 관리할 수 없습니다.
+          현재 역할에서는 메뉴 ON/OFF를 관리할 수 없습니다.
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-slate-200/80 dark:border-white/10">

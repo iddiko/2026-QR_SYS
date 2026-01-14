@@ -1,13 +1,16 @@
 "use client"
 
 import React from 'react'
-import supabase from './supabaseClient'
 import useAppSession from './authSession'
 import { getClientAuthHeaders } from './clientAuth'
 
 export type RoleKey = 'SUPER' | 'MAIN' | 'SUB' | 'GUARD' | 'RESIDENT'
 
 export type MenuConfigMap = Record<string, boolean>
+
+function cacheKey(role: RoleKey) {
+  return `qr_sys_menu_config_cache_${role}`
+}
 
 async function fetchMenuConfig(targetRole?: RoleKey): Promise<{ targetRole: RoleKey; config: MenuConfigMap } | null> {
   try {
@@ -48,7 +51,14 @@ export function useEffectiveMenuConfig() {
       }
 
       const json = await fetchMenuConfig(role)
-      setConfig(json?.config ?? {})
+      if (json?.config) {
+        setConfig(json.config)
+        try {
+          localStorage.setItem(cacheKey(role), JSON.stringify(json.config))
+        } catch {
+          // ignore
+        }
+      }
       if (showSpinner) setLoading(false)
     },
     [isSuper, role]
@@ -58,59 +68,22 @@ export function useEffectiveMenuConfig() {
     if (!role) return
     if (lastRoleRef.current === role) return
     lastRoleRef.current = role
+
+    if (!isSuper) {
+      try {
+        const cached = localStorage.getItem(cacheKey(role))
+        if (cached) setConfig(JSON.parse(cached) as MenuConfigMap)
+      } catch {
+        // ignore
+      }
+    }
+
     void refresh({ showSpinner: true })
-  }, [refresh, role])
-
-  // cross-tab instant updates (same-origin only)
-  React.useEffect(() => {
-    if (!role || isSuper) return
-    if (typeof window === 'undefined') return
-    if (!('BroadcastChannel' in window)) return
-
-    const ch = new BroadcastChannel('qr_sys_menu_config')
-    ch.onmessage = (ev) => {
-      const data = ev.data as any
-      if (!data || data.type !== 'menu-config-updated') return
-      if (data.targetRole !== role) return
-      if (typeof data.menuKey !== 'string' || typeof data.enabled !== 'boolean') return
-      setConfig((prev) => ({ ...prev, [data.menuKey]: data.enabled }))
-    }
-    return () => ch.close()
-  }, [isSuper, role])
-
-  // best-effort realtime (falls back to polling)
-  React.useEffect(() => {
-    if (!role || isSuper) {
-      setLoading(false)
-      return
-    }
-
-    let cancelled = false
-
-    const channel = supabase
-      .channel(`menu_config_${role}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'menu_configurations', filter: `target_role=eq.${role}` },
-        async () => {
-          if (cancelled) return
-          const json = await fetchMenuConfig(role)
-          if (cancelled) return
-          setConfig(json?.config ?? {})
-        }
-      )
-      .subscribe()
-
-    const pollId = window.setInterval(() => {
-      void refresh({ showSpinner: false })
-    }, 10000)
-
-    return () => {
-      cancelled = true
-      window.clearInterval(pollId)
-      supabase.removeChannel(channel)
-    }
   }, [isSuper, refresh, role])
+
+  React.useEffect(() => {
+    if (!role || isSuper) setLoading(false)
+  }, [isSuper, role])
 
   return { role: role ?? 'RESIDENT', config, loading, refresh }
 }

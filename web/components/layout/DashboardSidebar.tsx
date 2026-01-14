@@ -73,10 +73,10 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
   const managementMenu = rawMenus.find((m) => m.id === 'management' && !m.hidden)
   const managementLabel = managementMenu?.label ?? '단지/동/입주민 관리'
 
-  const managementItems =
+  const managementItemsFromState =
     managementMenu?.children
       ?.filter((c) => !c.hidden && c.href)
-      .map((c) => ({ id: c.id, href: c.href as string, label: c.label })) ?? fallbackManagementItems
+      .map((c) => ({ id: c.id, href: c.href as string, label: c.label })) ?? []
 
   const groupsFromState: NavGroup[] = rawMenus
     .filter((m) => m.id !== 'management')
@@ -92,6 +92,13 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
     }))
     .filter((g) => g.children.length > 0)
 
+  const flatItemsFromState = rawMenus
+    .filter((m) => m.id !== 'management')
+    .filter((m) => !m.hidden)
+    .filter((m) => m.href)
+    .filter((m) => (m.children?.length ?? 0) === 0)
+    .map((m) => ({ id: m.id, href: m.href as string, label: m.label }))
+
   const applyConfig = React.useCallback(
     (menuKey: string) => {
       if (isSuper) return true
@@ -101,28 +108,23 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
     [isSuper, menuConfig]
   )
 
+  const baseManagementItems = (managementItemsFromState.length ? managementItemsFromState : fallbackManagementItems) as NavItem[]
   const managementEnabled = isSuper ? true : applyConfig('management')
+  const managementItemsConfigured = isSuper ? baseManagementItems : baseManagementItems.filter((i) => applyConfig(i.id))
 
-  const managementItemsConfigured = (managementItems as NavItem[]).filter((i) => applyConfig(i.id)) ?? ([] as NavItem[])
-  const groupsConfigured: NavGroup[] = groupsFromState
-    .filter((g) => applyConfig(g.id))
-    .map((g) => ({ ...g, children: g.children.filter((c) => applyConfig(c.id)) }))
-    .filter((g) => g.children.length > 0)
+  const baseGroups: NavGroup[] = groupsFromState.length ? groupsFromState : fallbackGroupItems
+  const groupsConfigured: NavGroup[] = isSuper
+    ? baseGroups
+    : baseGroups
+        .filter((g) => applyConfig(g.id))
+        .map((g) => ({ ...g, children: g.children.filter((c) => applyConfig(c.id)) }))
+        .filter((g) => g.children.length > 0)
 
-  const flatItemsFromState = rawMenus
-    .filter((m) => m.id !== 'management')
-    .filter((m) => !m.hidden)
-    .filter((m) => m.href)
-    .filter((m) => (m.children?.length ?? 0) === 0)
-    .map((m) => ({ id: m.id, href: m.href as string, label: m.label }))
+  const baseFlatItems = flatItemsFromState.length ? flatItemsFromState : fallbackFlatItems
+  const flatItemsConfigured = isSuper ? baseFlatItems : baseFlatItems.filter((i) => applyConfig(i.id))
 
-  const flatItemsConfigured = isSuper ? flatItemsFromState : flatItemsFromState.filter((i) => applyConfig(i.id))
-
-  const effectiveGroups = groupsConfigured.length ? groupsConfigured : fallbackGroupItems
-  const effectiveFlatItems = flatItemsConfigured.length ? flatItemsConfigured : fallbackFlatItems
-
-  const dashboardItem = effectiveFlatItems.find((i) => i.href === '/dashboard') ?? (isSuper ? fallbackFlatItems[0] : null)
-  const otherFlatItems = effectiveFlatItems.filter((i) => i.href !== '/dashboard')
+  const dashboardItem = flatItemsConfigured.find((i) => i.href === '/dashboard') ?? (isSuper ? fallbackFlatItems[0] : null)
+  const otherFlatItems = flatItemsConfigured.filter((i) => i.href !== '/dashboard')
 
   const isActiveManagement = managementItemsConfigured.some((item) => pathname === item.href)
   const [openGroupId, setOpenGroupId] = React.useState<string | null>(managementEnabled ? 'management' : null)
@@ -132,9 +134,9 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
       setOpenGroupId('management')
       return
     }
-    const activeGroup = effectiveGroups.find((g) => g.children.some((c) => c.href === pathname))
+    const activeGroup = groupsConfigured.find((g) => g.children.some((c) => c.href === pathname))
     if (activeGroup) setOpenGroupId(activeGroup.id)
-  }, [effectiveGroups, isActiveManagement, pathname])
+  }, [groupsConfigured, isActiveManagement, pathname])
 
   const toggleGroup = (groupId: string) => {
     setOpenGroupId((prev) => (prev === groupId ? null : groupId))
@@ -199,7 +201,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
               toggleGroup('management')
               goToDefaultChild({
                 defaultChildId: managementMenu?.defaultChildId,
-                children: managementItemsConfigured as NavItem[],
+                children: managementItemsConfigured,
               })
             }}
             className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm transition ${
@@ -216,11 +218,11 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
         {managementEnabled && managementItemsConfigured.length > 0 && openGroupId === 'management' ? (
           <div className="space-y-2 pl-3">
             {managementItemsConfigured.map((item) => {
-              const isActive = isActiveHref(item.href as string)
+              const isActive = isActiveHref(item.href)
               return (
                 <Link
                   key={item.href}
-                  href={item.href as string}
+                  href={item.href}
                   className={`block rounded-2xl border px-4 py-2.5 text-sm transition ${
                     isActive
                       ? 'border-blue-500/30 bg-blue-500/10 text-slate-950 dark:text-white'
@@ -234,7 +236,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
           </div>
         ) : null}
 
-        {effectiveGroups.map((group) => {
+        {groupsConfigured.map((group) => {
           const isOpen = openGroupId === group.id
           const isActiveGroup = group.children.some((c) => pathname === c.href)
           return (

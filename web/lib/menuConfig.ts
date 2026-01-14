@@ -85,5 +85,30 @@ export function useEffectiveMenuConfig() {
     if (!role || isSuper) setLoading(false)
   }, [isSuper, role])
 
+  React.useEffect(() => {
+    if (!role || isSuper) return
+    if (typeof window === 'undefined') return
+
+    const lastRef = { ts: 0 }
+    const run = () => {
+      const now = Date.now()
+      if (now - lastRef.ts < 3000) return
+      lastRef.ts = now
+      void refresh({ showSpinner: false })
+    }
+
+    const onFocus = () => run()
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') run()
+    }
+
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [isSuper, refresh, role])
+
   return { role: role ?? 'RESIDENT', config, loading, refresh }
 }

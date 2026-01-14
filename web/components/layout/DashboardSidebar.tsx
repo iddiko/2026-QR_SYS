@@ -4,6 +4,7 @@ import React from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import ComplexScopeSelect from './ComplexScopeSelect'
+import BuildingScopeSelect from './BuildingScopeSelect'
 import useAppSession from '../../lib/authSession'
 import { useAdminCustomization } from '../../lib/adminCustomization'
 import { useEffectiveMenuConfig } from '../../lib/menuConfig'
@@ -61,6 +62,7 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
   const router = useRouter()
   const { session } = useAppSession()
   const isSuper = session?.role === 'SUPER'
+  const isMain = session?.role === 'MAIN'
   const { state } = useAdminCustomization()
   const { config: menuConfig } = useEffectiveMenuConfig()
 
@@ -163,6 +165,8 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
 
         {isSuper ? (
           <ComplexScopeSelect />
+        ) : isMain ? (
+          <BuildingScopeSelect />
         ) : complexLabel ? (
           <p className="mt-2 truncate text-sm text-slate-500 dark:text-slate-400">{complexLabel}</p>
         ) : null}
@@ -295,4 +299,3 @@ export default function DashboardSidebar({ userLabel, roleLabel, complexLabel }:
     </aside>
   )
 }
-

@@ -24,7 +24,7 @@ export default function ComplexScopeSelect() {
 
   return (
     <div className="mt-3">
-      <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500 dark:text-slate-400">소속 단지</p>
+      <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500 dark:text-slate-400">단지 선택</p>
       <select
         value={scope.type === 'all' ? '__all__' : scope.id}
         onChange={handleChange}

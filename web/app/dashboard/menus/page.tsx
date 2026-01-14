@@ -98,13 +98,6 @@ async function saveRoleConfig(targetRole: TargetRole, menuKey: string, enabled: 
     if (e?.name === 'AbortError') throw new Error('저장 요청이 지연됩니다. 잠시 후 다시 시도해주세요.')
     throw e
   }
-
-  // 즉시 반영(같은 브라우저 탭/창 간): 대상 역할(targetRole) 사이드바가 바로 업데이트되도록 브로드캐스트
-  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-    const ch = new BroadcastChannel('qr_sys_menu_config')
-    ch.postMessage({ type: 'menu-config-updated', targetRole, menuKey, enabled })
-    ch.close()
-  }
 }
 
 export default function RoleMenusPage() {
@@ -117,11 +110,24 @@ export default function RoleMenusPage() {
   const rows = React.useMemo(() => flattenMenus(state.menus ?? []), [state.menus])
 
   const [toggles, setToggles] = React.useState<ToggleState>(() => ({}))
+  const [baseline, setBaseline] = React.useState<ToggleState>(() => ({}))
   const [loadingConfig, setLoadingConfig] = React.useState(false)
   const [saveError, setSaveError] = React.useState<string | null>(null)
+  const [saving, setSaving] = React.useState(false)
 
   React.useEffect(() => {
     setToggles((prev) => {
+      const next: ToggleState = { ...prev }
+      for (const row of rows) {
+        if (!next[row.key]) next[row.key] = { MAIN: false, SUB: false, GUARD: false, RESIDENT: false }
+      }
+      for (const key of Object.keys(next)) {
+        if (!rows.some((r) => r.key === key)) delete next[key]
+      }
+      return next
+    })
+
+    setBaseline((prev) => {
       const next: ToggleState = { ...prev }
       for (const row of rows) {
         if (!next[row.key]) next[row.key] = { MAIN: false, SUB: false, GUARD: false, RESIDENT: false }
@@ -140,20 +146,17 @@ export default function RoleMenusPage() {
     try {
       const results = await Promise.all(columns.map(async (targetRole) => ({ targetRole, config: await fetchRoleConfig(targetRole) })))
 
-      setToggles((prev) => {
-        const next: ToggleState = { ...prev }
-        for (const row of rows) {
-          if (!next[row.key]) next[row.key] = { MAIN: false, SUB: false, GUARD: false, RESIDENT: false }
+      const nextState: ToggleState = {}
+      for (const row of rows) nextState[row.key] = { MAIN: false, SUB: false, GUARD: false, RESIDENT: false }
+      for (const r of results) {
+        for (const menuKey of Object.keys(nextState)) {
+          const v = r.config[menuKey]
+          if (typeof v === 'boolean') nextState[menuKey][r.targetRole] = v
         }
+      }
 
-        for (const r of results) {
-          for (const menuKey of Object.keys(next)) {
-            const v = r.config[menuKey]
-            if (typeof v === 'boolean') next[menuKey][r.targetRole] = v
-          }
-        }
-        return next
-      })
+      setToggles(nextState)
+      setBaseline(nextState)
     } catch (e: any) {
       setSaveError(e?.message ?? '메뉴 설정을 불러오지 못했습니다.')
     } finally {
@@ -165,7 +168,7 @@ export default function RoleMenusPage() {
     void loadConfigs()
   }, [loadConfigs])
 
-  const setToggle = async (menuKey: string, target: TargetRole, nextValue: boolean) => {
+  const setToggle = (menuKey: string, target: TargetRole, nextValue: boolean) => {
     setSaveError(null)
     setToggles((prev) => ({
       ...prev,
@@ -174,11 +177,45 @@ export default function RoleMenusPage() {
         [target]: nextValue,
       },
     }))
+  }
 
+  const dirtyCount = React.useMemo(() => {
+    let count = 0
+    for (const menuKey of Object.keys(toggles)) {
+      for (const targetRole of columns) {
+        const a = toggles[menuKey]?.[targetRole] ?? false
+        const b = baseline[menuKey]?.[targetRole] ?? false
+        if (a !== b) count += 1
+      }
+    }
+    return count
+  }, [baseline, columns, toggles])
+
+  const saveAll = async () => {
+    if (saving) return
+    setSaveError(null)
+    setSaving(true)
     try {
-      await saveRoleConfig(target, menuKey, nextValue)
+      for (const menuKey of Object.keys(toggles)) {
+        for (const targetRole of columns) {
+          const nextValue = toggles[menuKey]?.[targetRole] ?? false
+          const prevValue = baseline[menuKey]?.[targetRole] ?? false
+          if (nextValue === prevValue) continue
+          await saveRoleConfig(targetRole, menuKey, nextValue)
+
+          // 저장된 값만 즉시 반영(같은 브라우저 탭/창 간)
+          if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+            const ch = new BroadcastChannel('qr_sys_menu_config')
+            ch.postMessage({ type: 'menu-config-updated', targetRole, menuKey, enabled: nextValue })
+            ch.close()
+          }
+        }
+      }
+      setBaseline(toggles)
     } catch (e: any) {
       setSaveError(e?.message ?? '저장에 실패했습니다.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -196,6 +233,38 @@ export default function RoleMenusPage() {
       </div>
 
       <EditablePageNote routeKey={routeKey} />
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/60 p-4 text-sm text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+        <div className="text-xs text-slate-600 dark:text-slate-400">
+          변경사항: <span className="font-semibold text-slate-900 dark:text-white">{dirtyCount}</span>건
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={loadConfigs}
+            disabled={loadingConfig || saving}
+            className="rounded-full border border-slate-200/70 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+          >
+            새로고침
+          </button>
+          <button
+            type="button"
+            onClick={() => setToggles(baseline)}
+            disabled={dirtyCount === 0 || saving}
+            className="rounded-full border border-slate-200/70 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+          >
+            변경 취소
+          </button>
+          <button
+            type="button"
+            onClick={saveAll}
+            disabled={dirtyCount === 0 || saving}
+            className="rounded-full bg-blue-600 px-5 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? '저장 중…' : '저장'}
+          </button>
+        </div>
+      </div>
 
       <div className="rounded-2xl border border-slate-200/80 bg-white/60 p-4 text-sm text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
         <p className="font-semibold text-slate-900 dark:text-white">규칙</p>
@@ -268,7 +337,7 @@ export default function RoleMenusPage() {
                         <button
                           type="button"
                           disabled={!allowed}
-                          onClick={() => void setToggle(row.key, targetRole, !value)}
+                          onClick={() => setToggle(row.key, targetRole, !value)}
                           className={`inline-flex w-24 items-center justify-between rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.25em] transition ${
                             !allowed
                               ? 'cursor-not-allowed border-slate-200/80 bg-slate-100 text-slate-400 dark:border-white/10 dark:bg-white/5'

@@ -34,6 +34,7 @@ const roleLabels: Record<TargetRole, string> = {
 }
 
 type ToggleState = Record<string, Record<TargetRole, boolean>>
+const DEFAULT_ROLE_STATE: Record<TargetRole, boolean> = { MAIN: false, SUB: false, GUARD: false, RESIDENT: false }
 
 function canManage(currentRole: RoleKey, targetRole: TargetRole) {
   if (currentRole === 'SUPER') return true
@@ -70,6 +71,7 @@ async function fetchRoleConfig(targetRole: TargetRole) {
     { headers, cache: 'no-store' },
     8000
   )
+
   if (!res.ok) throw new Error((json?.error as string) ?? '메뉴 설정을 불러오지 못했습니다.')
   return (json?.config as Record<string, boolean> | undefined) ?? {}
 }
@@ -87,6 +89,7 @@ async function saveRoleConfig(targetRole: TargetRole, menuKey: string, enabled: 
     },
     8000
   )
+
   if (!res.ok) throw new Error((json?.error as string) ?? '저장에 실패했습니다.')
 }
 
@@ -105,6 +108,46 @@ export default function RoleMenusPage() {
   const { state } = useAdminCustomization()
   const rows = React.useMemo(() => flattenMenus(state.menus ?? []), [state.menus])
 
+  const menuRelations = React.useMemo(() => {
+    const parentById = new Map<string, string | null>()
+    const childrenById = new Map<string, string[]>()
+
+    const visit = (nodes: MenuItem[], parentId: string | null) => {
+      for (const node of nodes) {
+        parentById.set(node.id, parentId)
+        childrenById.set(node.id, (node.children ?? []).map((c) => c.id))
+        if (node.children?.length) visit(node.children, node.id)
+      }
+    }
+
+    visit(state.menus ?? [], null)
+
+    const descendants = (id: string) => {
+      const result: string[] = []
+      const stack = [...(childrenById.get(id) ?? [])]
+      while (stack.length) {
+        const current = stack.pop()
+        if (!current) continue
+        result.push(current)
+        const kids = childrenById.get(current)
+        if (kids?.length) stack.push(...kids)
+      }
+      return result
+    }
+
+    const ancestors = (id: string) => {
+      const result: string[] = []
+      let current = parentById.get(id) ?? null
+      while (current) {
+        result.push(current)
+        current = parentById.get(current) ?? null
+      }
+      return result
+    }
+
+    return { descendants, ancestors }
+  }, [state.menus])
+
   const [toggles, setToggles] = React.useState<ToggleState>(() => ({}))
   const [baseline, setBaseline] = React.useState<ToggleState>(() => ({}))
   const [loadingConfig, setLoadingConfig] = React.useState(false)
@@ -115,7 +158,7 @@ export default function RoleMenusPage() {
     setToggles((prev) => {
       const next: ToggleState = { ...prev }
       for (const row of rows) {
-        if (!next[row.key]) next[row.key] = { MAIN: false, SUB: false, GUARD: false, RESIDENT: false }
+        if (!next[row.key]) next[row.key] = { ...DEFAULT_ROLE_STATE }
       }
       for (const key of Object.keys(next)) {
         if (!rows.some((r) => r.key === key)) delete next[key]
@@ -126,7 +169,7 @@ export default function RoleMenusPage() {
     setBaseline((prev) => {
       const next: ToggleState = { ...prev }
       for (const row of rows) {
-        if (!next[row.key]) next[row.key] = { MAIN: false, SUB: false, GUARD: false, RESIDENT: false }
+        if (!next[row.key]) next[row.key] = { ...DEFAULT_ROLE_STATE }
       }
       for (const key of Object.keys(next)) {
         if (!rows.some((r) => r.key === key)) delete next[key]
@@ -146,7 +189,7 @@ export default function RoleMenusPage() {
       )
 
       const nextState: ToggleState = {}
-      for (const row of rows) nextState[row.key] = { MAIN: false, SUB: false, GUARD: false, RESIDENT: false }
+      for (const row of rows) nextState[row.key] = { ...DEFAULT_ROLE_STATE }
       for (const r of results) {
         for (const menuKey of Object.keys(nextState)) {
           const v = r.config[menuKey]
@@ -156,7 +199,7 @@ export default function RoleMenusPage() {
 
       setToggles(nextState)
       setBaseline(nextState)
-    } catch (e: any) {
+    } catch (e) {
       console.error(e)
       setStatus({ kind: 'error', message: '메뉴 설정을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.' })
     } finally {
@@ -176,13 +219,27 @@ export default function RoleMenusPage() {
 
   const setToggle = (menuKey: string, target: TargetRole, nextValue: boolean) => {
     setStatus({ kind: 'idle' })
-    setToggles((prev) => ({
-      ...prev,
-      [menuKey]: {
-        ...(prev[menuKey] ?? { MAIN: false, SUB: false, GUARD: false, RESIDENT: false }),
-        [target]: nextValue,
-      },
-    }))
+    setToggles((prev) => {
+      const next: ToggleState = { ...prev }
+
+      const setValue = (key: string, value: boolean) => {
+        next[key] = { ...(next[key] ?? DEFAULT_ROLE_STATE), [target]: value }
+      }
+
+      setValue(menuKey, nextValue)
+
+      if (nextValue) {
+        for (const parentId of menuRelations.ancestors(menuKey)) {
+          setValue(parentId, true)
+        }
+      } else {
+        for (const childId of menuRelations.descendants(menuKey)) {
+          setValue(childId, false)
+        }
+      }
+
+      return next
+    })
   }
 
   const dirtyCount = React.useMemo(() => {
@@ -215,7 +272,7 @@ export default function RoleMenusPage() {
       }
       setBaseline(toggles)
       setStatus({ kind: 'saved', message: '저장 완료' })
-    } catch (e: any) {
+    } catch (e) {
       console.error(e)
       setStatus({ kind: 'error', message: '저장에 실패했습니다. 잠시 후 다시 시도해주세요.' })
     } finally {
@@ -230,8 +287,8 @@ export default function RoleMenusPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-blue-600 dark:text-sky-300">권한</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">권한별 메뉴 관리</h2>
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-            가로: {columns.map((c) => roleLabels[c]).join(' / ') || '없음'} · 세로: 모든 메뉴(대분류/하위메뉴 포함) · 각 셀에서 ON/OFF를
-            변경한 뒤 저장 버튼으로 반영합니다.
+            가로: {columns.map((c) => roleLabels[c]).join(' / ') || '없음'} · 세로: 모든 메뉴(대분류/하위메뉴 포함) · 각 셀에서 ON/OFF를 변경한 뒤
+            저장 버튼으로 반영합니다.
           </p>
         </div>
         <PageEditButton routeKey={routeKey} />
@@ -244,6 +301,7 @@ export default function RoleMenusPage() {
           <div>
             변경사항: <span className="font-semibold text-slate-900 dark:text-white">{dirtyCount}</span>건
           </div>
+          {loadingConfig ? <div className="text-slate-500">불러오는 중…</div> : null}
           {status.kind === 'saving' ? <div className="text-slate-500">저장 중…</div> : null}
           {status.kind === 'saved' ? <div className="text-emerald-700 dark:text-emerald-300">{status.message}</div> : null}
           {status.kind === 'error' ? <div className="text-rose-700 dark:text-rose-300">{status.message}</div> : null}
@@ -286,6 +344,7 @@ export default function RoleMenusPage() {
           <li>메인 관리자는 서브/경비/입주민 메뉴만 ON/OFF 할 수 있습니다.</li>
           <li>서브 관리자는 경비/입주민 메뉴만 ON/OFF 할 수 있습니다.</li>
           <li>같은 레벨끼리는 서로의 메뉴를 볼 수도, 조절할 수도 없습니다.</li>
+          <li>대분류 메뉴를 OFF 하면 하위 메뉴도 자동으로 OFF 됩니다.</li>
         </ul>
       </div>
 

@@ -85,7 +85,12 @@ function mergeEffectiveConfig(rows: { owner_role: string; menu_key: string; is_e
 }
 
 export async function GET(request: Request) {
-  const requester = await getRequesterRole(request)
+  let requester: Awaited<ReturnType<typeof getRequesterRole>>
+  try {
+    requester = await getRequesterRole(request)
+  } catch {
+    return json(503, { error: 'Supabase 인증 확인에 실패했습니다. 잠시 후 다시 시도해주세요.' })
+  }
   if (!requester) return json(401, { error: '인증 정보가 없습니다. 다시 로그인해주세요.' })
 
   const url = new URL(request.url)
@@ -98,16 +103,20 @@ export async function GET(request: Request) {
     if (!canManage(requester.role, targetRole)) return json(403, { error: '권한이 부족합니다.' })
   }
 
-  const admin = getSupabaseAdminClient()
-  const { data, error } = await admin
-    .from('menu_configurations')
-    .select('owner_role, target_role, menu_key, is_enabled')
-    .eq('target_role', targetRole)
+  try {
+    const admin = getSupabaseAdminClient()
+    const { data, error } = await admin
+      .from('menu_configurations')
+      .select('owner_role, target_role, menu_key, is_enabled')
+      .eq('target_role', targetRole)
 
-  if (error) return json(500, { error: error.message })
+    if (error) return json(500, { error: error.message })
 
-  const effective = mergeEffectiveConfig((data as any[]) ?? [])
-  return json(200, { targetRole, config: effective })
+    const effective = mergeEffectiveConfig((data as any[]) ?? [])
+    return json(200, { targetRole, config: effective })
+  } catch {
+    return json(503, { error: 'Supabase 연결에 실패했습니다. 잠시 후 다시 시도해주세요.' })
+  }
 }
 
 type PutBody = {
@@ -117,7 +126,12 @@ type PutBody = {
 }
 
 export async function PUT(request: Request) {
-  const requester = await getRequesterRole(request)
+  let requester: Awaited<ReturnType<typeof getRequesterRole>>
+  try {
+    requester = await getRequesterRole(request)
+  } catch {
+    return json(503, { error: 'Supabase 인증 확인에 실패했습니다. 잠시 후 다시 시도해주세요.' })
+  }
   if (!requester) return json(401, { error: '인증 정보가 없습니다. 다시 로그인해주세요.' })
 
   const ownerRole = requester.role
@@ -134,22 +148,25 @@ export async function PUT(request: Request) {
 
   if (!canManage(ownerRole, targetRole)) return json(403, { error: '권한이 부족합니다.' })
 
-  const admin = getSupabaseAdminClient()
-  const { error } = await admin
-    .from('menu_configurations')
-    .upsert(
-      {
-        owner_role: ownerRole as OwnerRole,
-        target_role: targetRole,
-        menu_key: menuKey,
-        is_enabled: enabled,
-        updated_by: requester.userId,
-      },
-      { onConflict: 'owner_role,target_role,menu_key' }
-    )
+  try {
+    const admin = getSupabaseAdminClient()
+    const { error } = await admin
+      .from('menu_configurations')
+      .upsert(
+        {
+          owner_role: ownerRole as OwnerRole,
+          target_role: targetRole,
+          menu_key: menuKey,
+          is_enabled: enabled,
+          updated_by: requester.userId,
+        },
+        { onConflict: 'owner_role,target_role,menu_key' }
+      )
 
-  if (error) return json(500, { error: error.message })
+    if (error) return json(500, { error: error.message })
 
-  return json(200, { ok: true })
+    return json(200, { ok: true })
+  } catch {
+    return json(503, { error: 'Supabase 연결에 실패했습니다. 잠시 후 다시 시도해주세요.' })
+  }
 }
-

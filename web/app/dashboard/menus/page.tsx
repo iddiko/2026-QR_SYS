@@ -70,6 +70,13 @@ async function saveRoleConfig(targetRole: TargetRole, menuKey: string, enabled: 
   })
   const json = (await res.json().catch(() => ({}))) as { error?: string }
   if (!res.ok) throw new Error(json.error ?? '저장에 실패했습니다.')
+
+  // 즉시 반영(같은 브라우저 탭/창 간): 대상 역할(targetRole) 사이드바가 바로 업데이트되도록 브로드캐스트
+  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+    const ch = new BroadcastChannel('qr_sys_menu_config')
+    ch.postMessage({ type: 'menu-config-updated', targetRole, menuKey, enabled })
+    ch.close()
+  }
 }
 
 export default function RoleMenusPage() {
@@ -261,4 +268,3 @@ export default function RoleMenusPage() {
     </section>
   )
 }
-

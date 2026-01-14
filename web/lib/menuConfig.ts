@@ -34,7 +34,7 @@ export function useEffectiveMenuConfig() {
 
   const [config, setConfig] = React.useState<MenuConfigMap>({})
   const [loading, setLoading] = React.useState(true)
-  const mountedRef = React.useRef(false)
+  const lastRoleRef = React.useRef<RoleKey | null>(null)
 
   const refresh = React.useCallback(
     async (opts?: { showSpinner?: boolean }) => {
@@ -55,10 +55,28 @@ export function useEffectiveMenuConfig() {
   )
 
   React.useEffect(() => {
-    if (mountedRef.current) return
-    mountedRef.current = true
+    if (!role) return
+    if (lastRoleRef.current === role) return
+    lastRoleRef.current = role
     void refresh({ showSpinner: true })
-  }, [refresh])
+  }, [refresh, role])
+
+  // cross-tab instant updates (same-origin only)
+  React.useEffect(() => {
+    if (!role || isSuper) return
+    if (typeof window === 'undefined') return
+    if (!('BroadcastChannel' in window)) return
+
+    const ch = new BroadcastChannel('qr_sys_menu_config')
+    ch.onmessage = (ev) => {
+      const data = ev.data as any
+      if (!data || data.type !== 'menu-config-updated') return
+      if (data.targetRole !== role) return
+      if (typeof data.menuKey !== 'string' || typeof data.enabled !== 'boolean') return
+      setConfig((prev) => ({ ...prev, [data.menuKey]: data.enabled }))
+    }
+    return () => ch.close()
+  }, [isSuper, role])
 
   // best-effort realtime (falls back to polling)
   React.useEffect(() => {

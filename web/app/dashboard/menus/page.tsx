@@ -99,7 +99,7 @@ type SaveStatus =
 export default function RoleMenusPage() {
   const { session } = useAppSession()
   const currentRole = (session?.role as RoleKey | undefined) ?? 'SUPER'
-  const columns = visibleColumns(currentRole)
+  const columns = React.useMemo(() => visibleColumns(currentRole), [currentRole])
   const routeKey = '/dashboard/menus'
 
   const { state } = useAdminCustomization()
@@ -288,12 +288,6 @@ export default function RoleMenusPage() {
           <li>같은 레벨끼리는 서로의 메뉴를 볼 수도, 조절할 수도 없습니다.</li>
         </ul>
       </div>
-
-      {loadingConfig ? (
-        <div className="rounded-2xl border border-slate-200/80 bg-white/60 p-4 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
-          메뉴 설정을 불러오는 중…
-        </div>
-      ) : null}
 
       {columns.length === 0 ? (
         <div className="rounded-2xl border border-slate-200/80 bg-white/60 p-4 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
